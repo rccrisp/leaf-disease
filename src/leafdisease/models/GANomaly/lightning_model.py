@@ -191,7 +191,8 @@ class Ganomaly(pl.LightningModule):
         """
         
         if self.visualise_training and self.example_image == None:
-            self.example_image = batch[0]["image"]
+            self.example_image = batch["image"][0]
+            self.example_image = self.example_image.unsqueeze(0)
 
         padded, fake, latent_i, latent_o = self(batch["image"])
 
@@ -224,15 +225,15 @@ class Ganomaly(pl.LightningModule):
 
     def reconstruct_and_plot(self):
         # Pass the validation image through the GAN for reconstruction
-        padded, fake = self(self.example_image)
+        padded, fake, _, _ = self(self.example_image)
 
-        # Plot the original and reconstructed images
+        # Plot the original and reconstructed images in color
         fig, axes = plt.subplots(1, 2)
-        axes[0].imshow(padded[0, 0, :, :].detach().cpu(), cmap='gray_r', interpolation='none')
+        axes[0].imshow(padded[0].permute(1, 2, 0).detach().cpu())
         axes[0].set_title('Original Image')
         axes[0].axis('off')
 
-        axes[1].imshow(fake[0, 0, :, :].detach().cpu(), cmap='gray_r', interpolation='none')
+        axes[1].imshow(fake[0].permute(1, 2, 0).detach().cpu())
         axes[1].set_title('Reconstructed Image')
         axes[1].axis('off')
 
