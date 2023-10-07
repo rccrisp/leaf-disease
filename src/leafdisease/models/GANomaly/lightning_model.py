@@ -49,7 +49,7 @@ class Ganomaly(pl.LightningModule):
         lr: float = 0.0002,
         beta1: float = 0.5,
         beta2: float = 0.999,
-        validation_image = None
+        visualise_training=False
     ) -> None:
         super().__init__()
 
@@ -78,7 +78,8 @@ class Ganomaly(pl.LightningModule):
         self.beta1 = beta1
         self.beta2 = beta2
 
-        self.validation_image = validation_image
+        self.visualise_training = visualise_training
+        self.example_image = None
 
         # important for training with multiple optimizers
         self.automatic_optimization = False
@@ -192,6 +193,9 @@ class Ganomaly(pl.LightningModule):
             (STEP_OUTPUT): Output predictions.
         """
         
+        if self.visualise_training and self.example_image == None:
+            self.example_image = batch[0]["image"]
+
         padded, fake, latent_i, latent_o = self(batch["image"])
 
         # calculate the anomaly score
@@ -221,7 +225,7 @@ class Ganomaly(pl.LightningModule):
 
     def reconstruct_and_plot(self):
         # Pass the validation image through the GAN for reconstruction
-        reconstructed_image = self(self.validation_image)
+        reconstructed_image = self(self.example_image)
 
         # Plot the original and reconstructed images
         fig, axes = plt.subplots(1, 2)
@@ -236,6 +240,6 @@ class Ganomaly(pl.LightningModule):
         plt.tight_layout()
         plt.show()
 
-    def on_epoch_end(self):
-        if self.validation_image:
+    def on_validation_epoch_end(self):
+        if self.visualise_training:
             self.reconstruct_and_plot()
