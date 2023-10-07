@@ -122,12 +122,9 @@ class Ganomaly(pl.LightningModule):
 
         fake, latent_i, latent_o = self.generator(padded_batch)
 
-        if self.training:
-            return padded_batch, fake, latent_i, latent_o
+        return padded_batch, fake, latent_i, latent_o
         
-        score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
         
-        return padded_batch, fake, score
 
     def training_step(
         self, batch: dict[str, str | Tensor], batch_idx: int
@@ -219,21 +216,23 @@ class Ganomaly(pl.LightningModule):
     def predict_step(self, batch: dict[str, str | Tensor]):
 
         # validation step is used for inference
-        padded_batch, fake, score = self(batch["image"])
+        padded, fake, latent_i, latent_o = self(batch["image"])
 
-        return {"real": padded_batch, "generated": fake, "anomaly_score": score, "filename": batch["filename"]}
+        score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
+
+        return {"real": padded, "generated": fake, "anomaly_score": score, "filename": batch["filename"]}
 
     def reconstruct_and_plot(self):
         # Pass the validation image through the GAN for reconstruction
-        reconstructed_image = self(self.example_image)
+        padded, fake = self(self.example_image)
 
         # Plot the original and reconstructed images
         fig, axes = plt.subplots(1, 2)
-        axes[0].imshow(self.validation_image[0, 0, :, :].detach().cpu(), cmap='gray_r', interpolation='none')
+        axes[0].imshow(padded[0, 0, :, :].detach().cpu(), cmap='gray_r', interpolation='none')
         axes[0].set_title('Original Image')
         axes[0].axis('off')
 
-        axes[1].imshow(reconstructed_image[0, 0, :, :].detach().cpu(), cmap='gray_r', interpolation='none')
+        axes[1].imshow(fake[0, 0, :, :].detach().cpu(), cmap='gray_r', interpolation='none')
         axes[1].set_title('Reconstructed Image')
         axes[1].axis('off')
 
