@@ -9,6 +9,7 @@ https://arxiv.org/abs/1805.06725
 from __future__ import annotations
 
 import logging
+import matplotlib.pyplot as plt
 
 import torch
 import pytorch_lightning as pl
@@ -48,6 +49,7 @@ class Ganomaly(pl.LightningModule):
         lr: float = 0.0002,
         beta1: float = 0.5,
         beta2: float = 0.999,
+        validation_image = None
     ) -> None:
         super().__init__()
 
@@ -75,6 +77,8 @@ class Ganomaly(pl.LightningModule):
         self.learning_rate = lr
         self.beta1 = beta1
         self.beta2 = beta2
+
+        self.validation_image = validation_image
 
         # important for training with multiple optimizers
         self.automatic_optimization = False
@@ -215,5 +219,23 @@ class Ganomaly(pl.LightningModule):
 
         return {"real": padded_batch, "generated": fake, "anomaly_score": score, "filename": batch["filename"]}
 
-    def on_epoch_end(self) -> None:
-        return super().on_validation_epoch_end()
+    def reconstruct_and_plot(self):
+        # Pass the validation image through the GAN for reconstruction
+        reconstructed_image = self(self.validation_image)
+
+        # Plot the original and reconstructed images
+        fig, axes = plt.subplots(1, 2)
+        axes[0].imshow(self.validation_image[0, 0, :, :].detach().cpu(), cmap='gray_r', interpolation='none')
+        axes[0].set_title('Original Image')
+        axes[0].axis('off')
+
+        axes[1].imshow(reconstructed_image[0, 0, :, :].detach().cpu(), cmap='gray_r', interpolation='none')
+        axes[1].set_title('Reconstructed Image')
+        axes[1].axis('off')
+
+        plt.tight_layout()
+        plt.show()
+
+    def on_epoch_end(self):
+        if self.validation_image:
+            self.reconstruct_and_plot()
