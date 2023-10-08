@@ -65,17 +65,17 @@ class Generator(nn.Module):
         add_final_conv_layer: bool = True,
     ) -> None:
         super().__init__()
-        self.encoder1 = Encoder(
+        self.encoder = Encoder(
             input_size, latent_vec_size, num_input_channels, n_features, extra_layers, add_final_conv_layer
         )
         self.decoder = Decoder(input_size, latent_vec_size, num_input_channels, n_features, extra_layers)
-        self.encoder2 = Encoder(
+        self.encoder = Encoder(
             input_size, latent_vec_size, num_input_channels, n_features, extra_layers, add_final_conv_layer
         )
 
     def forward(self, input_tensor: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """Return generated image and the latent vectors."""
-        latent_i = self.encoder1(input_tensor)
+        latent_i = self.encoder(input_tensor)
         gen_image = self.decoder(latent_i)
         latent_o = self.encoder2(gen_image)
         return gen_image, latent_i, latent_o
