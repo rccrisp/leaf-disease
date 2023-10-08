@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import matplotlib.pyplot as plt
+from IPython.display import clear_output
 
 import torch
 import pytorch_lightning as pl
@@ -213,8 +214,10 @@ class Ganomaly(pl.LightningModule):
         self.log("val_disc_loss", disc_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("val_gen_loss", gen_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
     
-    def predict_step(self, batch: dict[str, str | Tensor]):
+    def predict_step(self, batch: dict[str, str | Tensor], batch_idx):
 
+        del batch_idx
+        
         # validation step is used for inference
         padded, fake, latent_i, latent_o = self(batch["image"])
 
@@ -223,6 +226,7 @@ class Ganomaly(pl.LightningModule):
         return {"real": padded, "generated": fake, "anomaly_score": score, "filename": batch["filename"]}
 
     def reconstruct_and_plot(self):
+        clear_output(wait=True)
         # Pass the validation image through the GAN for reconstruction
         padded, fake, _, _ = self(self.example_image)
 
