@@ -175,8 +175,8 @@ class Ganomaly(pl.LightningModule):
         gen_optimiser.step()
 
         # Log
-        # self.log("disc_loss", disc_loss.item(), on_epoch=True, prog_bar=True, logger=True)
-        # self.log("gen_loss", gen_loss.item(), on_epoch=True, prog_bar=True, logger=True)
+        self.log("train_disc_loss", disc_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("train_gen_loss", gen_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         
         return {"gen_loss": gen_loss, "disc_loss": disc_loss}
 
@@ -198,7 +198,8 @@ class Ganomaly(pl.LightningModule):
 
         # calculate the anomaly score
         score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
-    
+        batch_score = torch.mean(score)
+
         pred_real, _ = self.discriminator(padded)
 
         pred_fake, _ = self.discriminator(fake.detach())
@@ -208,11 +209,9 @@ class Ganomaly(pl.LightningModule):
         gen_loss = self.generator_loss(latent_i, latent_o, padded, fake, pred_real, pred_fake)
 
         # log
-        # self.log("score", score.item(), on_epoch=True, prog_bar=True, logger=True)
-        # self.log("disc_loss", disc_loss.item(), on_epoch=True, prog_bar=True, logger=True)
-        # self.log("gen_loss", gen_loss.item(), on_epoch=True, prog_bar=True, logger=True)
-
-        return {"score": score, "gen_loss": gen_loss, "disc_loss": disc_loss}
+        self.log("val_score", batch_score.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("val_disc_loss", disc_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("val_gen_loss", gen_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
     
     def predict_step(self, batch: dict[str, str | Tensor]):
 
@@ -243,3 +242,4 @@ class Ganomaly(pl.LightningModule):
     def on_validation_epoch_end(self):
         if self.visualise_training:
             self.reconstruct_and_plot()
+    
