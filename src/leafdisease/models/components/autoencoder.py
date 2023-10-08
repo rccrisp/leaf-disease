@@ -1,5 +1,7 @@
 import math 
+from typing import List, Tuple
 
+import torch
 from torch import Tensor, nn
 
 class Encoder(nn.Module):
@@ -12,6 +14,7 @@ class Encoder(nn.Module):
         n_features (int): Number of features per convolution layer
         extra_layers (int): Number of extra layers since the network uses only a single encoder layer by default.
             Defaults to 0.
+        skips (bool): Use skip layers to ferry features across the bottleneck as in Unet. Defaults to False.
     """
 
     def __init__(
@@ -22,6 +25,7 @@ class Encoder(nn.Module):
         n_features: int,
         extra_layers: int = 0,
         add_final_conv_layer: bool = True,
+        skips: bool = False
     ) -> None:
         super().__init__()
 
@@ -44,19 +48,24 @@ class Encoder(nn.Module):
             self.extra_layers.add_module(f"extra-layers-{layer}-{n_features}-relu", nn.LeakyReLU(0.2, inplace=True))
 
         # Create pyramid features to reach latent vector
-        self.pyramid_features = nn.Sequential()
+        self.pyramid_features = []
         pyramid_dim = min(*input_size) // 2  # Use the smaller dimension to create pyramid.
         while pyramid_dim > 4:
             in_features = n_features
             out_features = n_features * 2
-            self.pyramid_features.add_module(
+            pyramid_step = nn.Sequential()
+            pyramid_step.add_module(
                 f"pyramid-{in_features}-{out_features}-conv",
                 nn.Conv2d(in_features, out_features, kernel_size=4, stride=2, padding=1, bias=False),
             )
-            self.pyramid_features.add_module(f"pyramid-{out_features}-batchnorm", nn.BatchNorm2d(out_features))
-            self.pyramid_features.add_module(f"pyramid-{out_features}-relu", nn.LeakyReLU(0.2, inplace=True))
+            pyramid_step.add_module(f"pyramid-{out_features}-batchnorm", nn.BatchNorm2d(out_features))
+            pyramid_step.add_module(f"pyramid-{out_features}-relu", nn.LeakyReLU(0.2, inplace=True))
+            self.pyramid_features.append(pyramid_step)
             n_features = out_features
             pyramid_dim = pyramid_dim // 2
+
+        # Convert the list to a ModuleList for proper PyTorch tracking
+        self.pyramid_features = nn.ModuleList(self.pyramid_features)
 
         # Final conv
         if add_final_conv_layer:
@@ -69,16 +78,33 @@ class Encoder(nn.Module):
                 bias=False,
             )
 
-    def forward(self, input_tensor: Tensor) -> Tensor:
+        self.skips = skips
+
+    def forward(self, input_tensor: Tensor) -> Tuple[Tensor, List[Tensor]] | Tensor:
         """Return latent vectors."""
 
+        # input layer
         output = self.input_layers(input_tensor)
+
+        # extra layers
         output = self.extra_layers(output)
-        output = self.pyramid_features(output)
+
+        # downsampling and skips
+        skips = []
+        for down_layer in self.pyramid_features:
+            output = down_layer(output)
+            skips.append(output)
+        # reverse skips
+        skips = reversed(skips[:-1])
+
+        # final layer
         if self.final_conv_layer is not None:
             output = self.final_conv_layer(output)
 
-        return output
+        if self.skips:
+            return output, skips
+        else: 
+            return output
 
 
 class Decoder(nn.Module):
@@ -91,6 +117,8 @@ class Decoder(nn.Module):
         n_features (int): Number of features per convolution layer
         extra_layers (int): Number of extra layers since the network uses only a single encoder layer by default.
             Defaults to 0.
+        skips (bool): Use skip layers to ferry features across the bottleneck as in Unet. Defaults to False.
+        dropout (int): Number of dropout layers, used to introduce noise to GAN training. Defaults to 0.
     """
 
     def __init__(
@@ -100,8 +128,8 @@ class Decoder(nn.Module):
         num_input_channels: int,
         n_features: int,
         extra_layers: int = 0,
-        skips=None,
-        dropout=0
+        skips: bool = False,
+        dropout: int = 0
     ) -> None:
         super().__init__()
 
@@ -127,12 +155,13 @@ class Decoder(nn.Module):
         self.latent_input.add_module(f"initial-{n_input_features}-relu", nn.ReLU(True))
 
         # Create inverse pyramid
-        self.inverse_pyramid = nn.Sequential()
+        self.inverse_pyramid = []
         pyramid_dim = min(*input_size) // 2  # Use the smaller dimension to create pyramid.
         while pyramid_dim > 4:
             in_features = n_input_features
             out_features = n_input_features // 2
-            self.inverse_pyramid.add_module(
+            inverse_pyramid_step = nn.Sequential()
+            inverse_pyramid_step.add_module(
                 f"pyramid-{in_features}-{out_features}-convt",
                 nn.ConvTranspose2d(
                     in_features,
@@ -143,10 +172,17 @@ class Decoder(nn.Module):
                     bias=False,
                 ),
             )
-            self.inverse_pyramid.add_module(f"pyramid-{out_features}-batchnorm", nn.BatchNorm2d(out_features))
-            self.inverse_pyramid.add_module(f"pyramid-{out_features}-relu", nn.ReLU(True))
+            inverse_pyramid_step.add_module(f"pyramid-{out_features}-batchnorm", nn.BatchNorm2d(out_features))
+            inverse_pyramid_step.add_module(f"pyramid-{out_features}-relu", nn.ReLU(True))
+            if dropout > 0:
+                inverse_pyramid_step.add_module((f'pyramid-{out_features}-dropout', nn.Dropout(p=0.5)))
+                dropout -= 1
+            self.inverse_pyramid.append(inverse_pyramid_step)
             n_input_features = out_features
             pyramid_dim = pyramid_dim // 2
+
+        # Convert the list to a ModuleList for proper PyTorch tracking
+        self.inverse_pyramid = nn.ModuleList(self.inverse_pyramid)
 
         # Extra Layers
         self.extra_layers = nn.Sequential()
@@ -177,10 +213,31 @@ class Decoder(nn.Module):
         )
         self.final_layers.add_module(f"final-{num_input_channels}-sigmoid", nn.Sigmoid())
 
-    def forward(self, input_tensor: Tensor) -> Tensor:
+        # for Unet architecture
+        self.skips = skips
+
+    def forward(self, input, skips=None) -> Tensor:
         """Return generated image."""
-        output = self.latent_input(input_tensor)
-        output = self.inverse_pyramid(output)
+
+        # receive skips if we expect skips
+        assert (self.skips == (skips is not None))
+
+        # input layer
+        output = self.latent_input(input)
+
+        # upsampling and skips
+        if self.skips:
+            for up_layer, skip in zip(self.inverse_pyramid, skips):
+                output = up_layer(output)
+                output = torch.cat((output,skip), dim=1)
+        else:
+            for up_layer in self.inverse_pyramid:
+                output = up_layer(output)
+
+        # extra layers
         output = self.extra_layers(output)
+
+        # final layer
         output = self.final_layers(output)
+
         return output
