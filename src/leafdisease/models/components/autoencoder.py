@@ -9,7 +9,8 @@ class Encoder(nn.Module):
 
     Args:
         input_size (tuple[int, int]): Size of input image
-        latent_vec_size (int): Size of latent vector z
+        latent_vec_features (int): number of features of latent vector z
+        latent_vec_dim (int): dimensions of latent vector z
         num_input_channels (int): Number of input channels in the image
         n_features (int): Number of features per convolution layer
         extra_layers (int): Number of extra layers since the network uses only a single encoder layer by default.
@@ -20,11 +21,11 @@ class Encoder(nn.Module):
     def __init__(
         self,
         input_size: tuple[int, int],
-        latent_vec_size: int,
+        latent_vec_features: int,
+        latent_vec_dim: int,
         num_input_channels: int,
         n_features: int,
         extra_layers: int = 0,
-        add_final_conv_layer: bool = True,
         skips: bool = False
     ) -> None:
         super().__init__()
@@ -32,7 +33,7 @@ class Encoder(nn.Module):
         self.input_layers = nn.Sequential()
         self.input_layers.add_module(
             f"initial-conv-{num_input_channels}-{n_features}",
-            nn.Conv2d(num_input_channels, n_features, kernel_size=4, stride=2, padding=4, bias=False),
+            nn.ConvTranspose2d(num_input_channels, n_features, kernel_size=4, stride=2, padding=0, bias=False),
         )
         self.input_layers.add_module(f"initial-relu-{n_features}", nn.LeakyReLU(0.2, inplace=True))
 
@@ -50,13 +51,13 @@ class Encoder(nn.Module):
         # Create pyramid features to reach latent vector
         self.pyramid_features = []
         pyramid_dim = min(*input_size) // 2  # Use the smaller dimension to create pyramid.
-        while pyramid_dim > 4:
+        while pyramid_dim > latent_vec_dim:
             in_features = n_features
             out_features = n_features * 2
             pyramid_step = nn.Sequential()
             pyramid_step.add_module(
                 f"pyramid-{in_features}-{out_features}-conv",
-                nn.Conv2d(in_features, out_features, kernel_size=4, stride=2, padding=1, bias=False),
+                nn.ConvTranspose2d(in_features, out_features, kernel_size=4, stride=2, padding=0, bias=False),
             )
             pyramid_step.add_module(f"pyramid-{out_features}-batchnorm", nn.BatchNorm2d(out_features))
             pyramid_step.add_module(f"pyramid-{out_features}-relu", nn.LeakyReLU(0.2, inplace=True))
@@ -66,17 +67,6 @@ class Encoder(nn.Module):
 
         # Convert the list to a ModuleList for proper PyTorch tracking
         self.pyramid_features = nn.ModuleList(self.pyramid_features)
-
-        # Final conv
-        if add_final_conv_layer:
-            self.final_conv_layer = nn.Conv2d(
-                n_features,
-                latent_vec_size,
-                kernel_size=4,
-                stride=1,
-                padding=0,
-                bias=False,
-            )
 
         self.skips = skips
 
@@ -96,10 +86,6 @@ class Encoder(nn.Module):
             skips.append(output)
         # reverse skips
         skips = reversed(skips[:-1])
-
-        # final layer
-        if self.final_conv_layer is not None:
-            output = self.final_conv_layer(output)
 
         if self.skips:
             return output, skips
@@ -124,7 +110,8 @@ class Decoder(nn.Module):
     def __init__(
         self,
         input_size: tuple[int, int],
-        latent_vec_size: int,
+        latent_vec_features: int,
+        latent_vec_dim: int,
         num_input_channels: int,
         n_features: int,
         extra_layers: int = 0,
@@ -133,33 +120,20 @@ class Decoder(nn.Module):
     ) -> None:
         super().__init__()
 
-        self.latent_input = nn.Sequential()
+        # for Unet architecture
+        self.skips = skips
 
         # Calculate input channel size to recreate inverse pyramid
-        exp_factor = math.ceil(math.log(min(input_size) // 2, 2)) - 2
+        exp_factor = math.ceil(math.log(min(input_size) // latent_vec_dim, 2)) - 1
         n_input_features = n_features * (2**exp_factor)
-
-        # CNN layer for latent vector input
-        self.latent_input.add_module(
-            f"initial-{latent_vec_size}-{n_input_features}-convt",
-            nn.ConvTranspose2d(
-                latent_vec_size,
-                n_input_features,
-                kernel_size=4,
-                stride=1,
-                padding=0,
-                bias=False,
-            ),
-        )
-        self.latent_input.add_module(f"initial-{n_input_features}-batchnorm", nn.BatchNorm2d(n_input_features))
-        self.latent_input.add_module(f"initial-{n_input_features}-relu", nn.ReLU(True))
 
         # Create inverse pyramid
         self.inverse_pyramid = []
+        scale_factor = 1
         pyramid_dim = min(*input_size) // 2  # Use the smaller dimension to create pyramid.
-        while pyramid_dim > 4:
-            in_features = n_input_features
-            out_features = n_input_features // 2
+        while pyramid_dim > latent_vec_dim:
+            in_features = n_input_features * scale_factor
+            out_features = n_input_features // 2 
             inverse_pyramid_step = nn.Sequential()
             inverse_pyramid_step.add_module(
                 f"pyramid-{in_features}-{out_features}-convt",
@@ -181,6 +155,8 @@ class Decoder(nn.Module):
             n_input_features = out_features
             pyramid_dim = pyramid_dim // 2
 
+            scale_factor = 2 if self.skips else 1
+
         # Convert the list to a ModuleList for proper PyTorch tracking
         self.inverse_pyramid = nn.ModuleList(self.inverse_pyramid)
 
@@ -189,7 +165,7 @@ class Decoder(nn.Module):
         for layer in range(extra_layers):
             self.extra_layers.add_module(
                 f"extra-layers-{layer}-{n_input_features}-conv",
-                nn.Conv2d(n_input_features, n_input_features, kernel_size=3, stride=1, padding=1, bias=False),
+                nn.ConvTranspose2d(n_input_features, n_input_features, kernel_size=3, stride=1, padding=0, bias=False),
             )
             self.extra_layers.add_module(
                 f"extra-layers-{layer}-{n_input_features}-batchnorm", nn.BatchNorm2d(n_input_features)
@@ -207,14 +183,11 @@ class Decoder(nn.Module):
                 num_input_channels,
                 kernel_size=4,
                 stride=2,
-                padding=1,
+                padding=0,
                 bias=False,
             ),
         )
         self.final_layers.add_module(f"final-{num_input_channels}-sigmoid", nn.Sigmoid())
-
-        # for Unet architecture
-        self.skips = skips
 
     def forward(self, input, skips=None) -> Tensor:
         """Return generated image."""
@@ -222,14 +195,15 @@ class Decoder(nn.Module):
         # receive skips if we expect skips
         assert (self.skips == (skips is not None))
 
-        # input layer
-        output = self.latent_input(input)
+        output = input
 
         # upsampling and skips
         if self.skips:
             for up_layer, skip in zip(self.inverse_pyramid, skips):
-                output = up_layer(output)
+                output = up_layer(output)   
+                assert output.shape == skip.shape, f"layer ({output.shape}) does not match skip ({skip.shape})"
                 output = torch.cat((output,skip), dim=1)
+                print(f"{output.shape} {skip.shape}")
         else:
             for up_layer in self.inverse_pyramid:
                 output = up_layer(output)

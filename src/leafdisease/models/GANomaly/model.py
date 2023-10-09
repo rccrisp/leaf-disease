@@ -10,8 +10,6 @@ Code adapted from https://github.com/samet-akcay/ganomaly.
 # SPDX-License-Identifier: Apache-2.0
 
 from torch import Tensor, nn
-
-from leafdisease.utils.image import pad_nextpow2
 from leafdisease.models.components.autoencoder import Encoder, Decoder
 
 class Discriminator(nn.Module):
