@@ -1,4 +1,6 @@
 import math
+import numpy as np
+import torch
 from torch import Tensor, nn
 
 def pad_nextpow2(batch: Tensor) -> Tensor:
@@ -50,6 +52,7 @@ def generate_masks(k_list, n, im_size, num_channels=3):
                 tmp = np.asarray(tmp).reshape(N, N)
                 tmp = tmp.repeat(k, 0).repeat(k, 1)
                 # Create a 3D mask with 'num_channels' channels
-                mask_3d = np.stack([tmp] * num_channels, axis=-1)
-                Ms.append(mask_3d)
-        yield Ms
+                mask_3d = np.stack([tmp] * num_channels, axis=0)
+                mask_tensor = torch.from_numpy(mask_3d).float()
+                Ms.append(mask_tensor)
+        yield torch.stack(Ms, dim=0)
