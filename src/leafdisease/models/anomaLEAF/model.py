@@ -177,6 +177,7 @@ class anomaleafModel(nn.Module):
         # created reduce image
         replace_mask = mask.eq(0)
         copy = batch.clone().to(device)
+        print(f"grayscale on {grayscale.device} copy on {copy.device}")
         assert grayscale.size() == copy.size(), f"grayscale shape ({grayscale.size()}) does not match original shape ({copy.size()})"
         mask_A_batch = torch.where(replace_mask, grayscale, copy)
         assert mask_A_batch.size() == copy.size(), f"mask shape ({mask_A_batch.size()}) does not match original shape ({copy.size()})"
