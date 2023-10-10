@@ -93,7 +93,7 @@ class Generator(nn.Module):
         dec7 = self.deconv7(dec6)
         dec7 = torch.cat([dec7, enc1], 1)
         dec8 = self.deconv8(dec7)
-        out = nn.Tanh()(dec8)
+        out = nn.Sigmoid()(dec8)
         return out
 
     def normal_weight_init(self, mean=0.0, std=0.02):
@@ -215,5 +215,5 @@ class anomaleafModel(nn.Module):
             fake = torch.where(replace_mask, fake_A, fake_B)
             assert fake.size() == batch.size(), f"generated image ({fake.size()}) does not match original image ({batch.size()})"
 
-            return {"real": padded, "reconstructed": fake}
+            return {"real": padded.permute(0, 2, 3, 1).cpu().numpy(), "fake": fake.detach().permute(0, 2, 3, 1).cpu().numpy()}
       
