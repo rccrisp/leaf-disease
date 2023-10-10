@@ -168,22 +168,24 @@ class anomaleafModel(nn.Module):
         # create masks
         mask = next(self.mask_gen)
         assert mask[0].max() == 1, f"No input was masked ({mask[0].min()},{mask[0].max()})"
+        mask = mask.to(batch.device)
+        assert mask.device == batch.device, f"Different devices: masks ({mask.device} batch ({batch.device}))"
 
         # grayscale
-        device = batch.device  # Get the device of the input batch
-        grayscale = torch.mean(batch, dim=1, keepdim=True).to(device) # grayscale copy of batch
+        grayscale = torch.mean(batch, dim=1, keepdim=True) # grayscale copy of batch
         grayscale = grayscale.repeat(1,3,1,1) # cast to three dimensions
 
         # created reduce image
         replace_mask = mask.eq(0)
-        copy = batch.clone().to(device)
-        print(f"grayscale on {grayscale.device} copy on {copy.device}")
+        copy = batch.clone()
+        print(f"mask = {replace_mask.device} copy = {copy.device} grayscale = {grayscale.device}")
+        assert grayscale.device == copy.device, f"Different devices: grayscale ({grayscale.device}) copy ({copy.device})"
         assert grayscale.size() == copy.size(), f"grayscale shape ({grayscale.size()}) does not match original shape ({copy.size()})"
         mask_A_batch = torch.where(replace_mask, grayscale, copy)
         assert mask_A_batch.size() == copy.size(), f"mask shape ({mask_A_batch.size()}) does not match original shape ({copy.size()})"
 
         replace_mask_inv = mask.eq(1)
-        copy = batch.clone().to(device)
+        copy = batch.clone()
         assert grayscale.size() == copy.size(), f"grayscale shape ({grayscale.size()}) does not match original shape ({copy.size()})"
         mask_B_batch = torch.where(replace_mask_inv, grayscale, copy)
         assert mask_B_batch.size() == copy.size(), f"mask shape ({mask_B_batch.size()}) does not match original shape ({copy.size()})"
