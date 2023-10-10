@@ -170,18 +170,19 @@ class anomaleafModel(nn.Module):
         assert mask[0].max() == 1, f"No input was masked ({mask[0].min()},{mask[0].max()})"
 
         # grayscale
-        grayscale = torch.mean(batch, dim=1, keepdim=True) # grayscale copy of batch
+        device = batch.device  # Get the device of the input batch
+        grayscale = torch.mean(batch, dim=1, keepdim=True).to(device) # grayscale copy of batch
         grayscale = grayscale.repeat(1,3,1,1) # cast to three dimensions
 
         # created reduce image
         replace_mask = mask.eq(0)
-        copy = batch.clone()
+        copy = batch.clone(device=batch.device)
         assert grayscale.size() == copy.size(), f"grayscale shape ({grayscale.size()}) does not match original shape ({copy.size()})"
         mask_A_batch = torch.where(replace_mask, grayscale, copy)
         assert mask_A_batch.size() == copy.size(), f"mask shape ({mask_A_batch.size()}) does not match original shape ({copy.size()})"
 
         replace_mask_inv = mask.eq(1)
-        copy = batch.clone()
+        copy = batch.clone(device=batch.device)
         assert grayscale.size() == copy.size(), f"grayscale shape ({grayscale.size()}) does not match original shape ({copy.size()})"
         mask_B_batch = torch.where(replace_mask_inv, grayscale, copy)
         assert mask_B_batch.size() == copy.size(), f"mask shape ({mask_B_batch.size()}) does not match original shape ({copy.size()})"
@@ -210,7 +211,7 @@ class anomaleafModel(nn.Module):
             return {"real": padded, "input_A": mask_A, "fake_A": fake_A, "input_B": mask_B, "fake_B": fake_B}
         else:
              # reconstruct image
-            fake = fake_A.clone()
+            fake = fake_A.clone(device=batch.device)
             replace_mask = mask.eq(0)
             fake = torch.where(replace_mask, fake_A, fake_B)
             assert fake.size() == batch.size(), f"generated image ({fake.size()}) does not match original image ({batch.size()})"
