@@ -254,5 +254,5 @@ class anomaleafModel(nn.Module):
             heatmap = torch.sum(heatmap, dim=1, keepdim=True)
             score, label = self.classifier(heatmap, self.threshold)
 
-            return {"real": padded.permute(0, 2, 3, 1).cpu().numpy(), "fake": fake.detach().permute(0, 2, 3, 1).cpu().numpy(), "pred_score": score, "pred_label": label}
+            return {"real": padded.detach(), "fake": fake.detach(), "pred_score": score, "pred_label": label}
       
