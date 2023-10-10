@@ -113,8 +113,8 @@ class Discriminator(nn.Module):
         self.conv4 = ConvBlock(num_filter * 4, num_filter * 8, stride=1)
         self.conv5 = ConvBlock(num_filter * 8, output_dim, stride=1, batch_norm=False)
 
-    def forward(self, x, label):
-        x = torch.cat([x, label], 1)
+    def forward(self, input_tensor, target_tensor):
+        x = torch.cat([input_tensor, target_tensor], 1)
         x = self.conv1(x)
         x = self.conv2(x)
         x = self.conv3(x)
@@ -144,7 +144,6 @@ class anomaleafModel(nn.Module):
         batch_size: int,
         input_size: tuple[int, int],
         n_features: int,
-        latent_vec_dim: int,
         num_input_channels=3,
         k: int = 16
     )-> None:
@@ -157,7 +156,7 @@ class anomaleafModel(nn.Module):
         self.generator.normal_weight_init()
 
         self.discriminator: Discriminator = Discriminator(
-            input_dim=num_input_channels,
+            input_dim=num_input_channels*2,
             num_filter=n_features,
             output_dim=1
         )
@@ -207,11 +206,14 @@ class anomaleafModel(nn.Module):
         fake_A = self.generator(mask_A)
         fake_B = self.generator(mask_B)
 
-        # reconstruct image
-        fake = fake_A.clone()
-        replace_mask = mask.eq(0)
-        fake = torch.where(replace_mask, fake_A, fake_B)
-        assert fake.size() == batch.size(), f"generated image ({fake.size()}) does not match original image ({batch.size()})"
+        if self.training:
+            return {"real": padded, "input_A": mask_A, "fake_A": fake_A, "input_B": mask_B, "fake_B": fake_B}
+        else:
+             # reconstruct image
+            fake = fake_A.clone()
+            replace_mask = mask.eq(0)
+            fake = torch.where(replace_mask, fake_A, fake_B)
+            assert fake.size() == batch.size(), f"generated image ({fake.size()}) does not match original image ({batch.size()})"
 
-        return padded, fake
+            return {"real": padded, "reconstructed": fake}
       
