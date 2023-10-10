@@ -9,12 +9,11 @@ https://arxiv.org/abs/1805.06725
 from __future__ import annotations
 
 import logging
-import matplotlib.pyplot as plt
-from IPython.display import clear_output
 
 import torch
 import pytorch_lightning as pl
 from torch import Tensor, optim
+import torchvision
 
 from leafdisease.utils.image import pad_nextpow2
 from .model import Generator, Discriminator
@@ -225,25 +224,30 @@ class Ganomaly(pl.LightningModule):
 
         return {"real": padded, "generated": fake, "anomaly_score": score, "filename": batch["filename"]}
 
-    def reconstruct_and_plot(self):
-        clear_output(wait=True)
-        # Pass the validation image through the GAN for reconstruction
-        padded, fake, _, _ = self(self.example_image)
+    def generate_and_save_samples(self, epoch):
+        # Generate and save example images
+        self.eval()  # Set the model to evaluation mode to ensure deterministic results
+        with torch.no_grad():
+            # Generate samples from your GAN
+            generated_samples = self.model(self.example_images)
 
-        # Plot the original and reconstructed images in color
-        fig, axes = plt.subplots(1, 2)
-        axes[0].imshow(padded[0].permute(1, 2, 0).detach().cpu())
-        axes[0].set_title('Original Image')
-        axes[0].axis('off')
-
-        axes[1].imshow(fake[0].permute(1, 2, 0).detach().cpu())
-        axes[1].set_title('Reconstructed Image')
-        axes[1].axis('off')
-
-        plt.tight_layout()
-        plt.show()
-
+            # Convert generated samples to a grid for visualization (using torchvision)
+            num_samples = self.example_images.size(0)
+            fake = generated_samples["fake"]
+            grid = torchvision.utils.make_grid(fake, nrow=int(num_samples**0.5))
+            filename = f"anomaLEAF_fake_epoch={epoch}.png"
+            save_path = os.path.join(self.save_example_dir, filename)
+            torchvision.utils.save_image(grid, save_path)
+            
+        self.train()  # Set the model back to training mode 
+    
     def on_validation_epoch_end(self):
-        if self.visualise_training:
-            self.reconstruct_and_plot()
+
+        # Specify when to generate and save examples (e.g., every n epochs)
+        if self.example_images is not None:
+
+            if self.current_epoch % self.save_n_epochs == 0:
+
+                # Call the method to generate and save examples
+                self.generate_and_save_samples(self.current_epoch)
     
