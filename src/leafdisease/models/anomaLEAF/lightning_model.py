@@ -247,18 +247,11 @@ class anomaLEAF(pl.LightningModule):
 
             # Convert generated samples to a grid for visualization (using torchvision)
             num_samples = self.example_images.size(0)
-            real = generated_samples["real"]
-            grid = torchvision.utils.make_grid(real, nrow=int(num_samples**0.5))
-            filename = f"anomaLEAF_real_epoch={epoch}.png"
-            save_path = os.path.join(self.save_example_dir, filename)
-            torchvision.utils.save_image(grid, save_path)
-
             fake = generated_samples["fake"]
             grid = torchvision.utils.make_grid(fake, nrow=int(num_samples**0.5))
             filename = f"anomaLEAF_fake_epoch={epoch}.png"
             save_path = os.path.join(self.save_example_dir, filename)
             torchvision.utils.save_image(grid, save_path)
-            print(save_path)
             
         self.train()  # Set the model back to training mode 
     
