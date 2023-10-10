@@ -146,10 +146,17 @@ class Ganomaly(pl.LightningModule):
         self.manual_backward(gen_loss)
         gen_optimiser.step()
 
+        #################
+        # Anomaly Score #
+        #################
+        score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
+        batch_score = torch.mean(score)
+
         # Log
         self.log("train_disc_loss", disc_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("train_gen_loss", gen_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        
+        self.log("train_score", batch_score.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+
         return {"gen_loss": gen_loss, "disc_loss": disc_loss}
 
     def validation_step(self, batch: dict[str, str | Tensor], *args, **kwargs) :
@@ -197,11 +204,10 @@ class Ganomaly(pl.LightningModule):
         self.eval()  # Set the model to evaluation mode to ensure deterministic results
         with torch.no_grad():
             # Generate samples from your GAN
-            generated_samples = self.model(self.example_images)
+            _, fake, _, _ = self.model(self.example_images)
 
             # Convert generated samples to a grid for visualization (using torchvision)
             num_samples = self.example_images.size(0)
-            fake = generated_samples["fake"]
             grid = torchvision.utils.make_grid(fake, nrow=int(num_samples**0.5))
             filename = f"GANomaly_fake_epoch={epoch}.png"
             save_path = os.path.join(self.save_example_dir, filename)

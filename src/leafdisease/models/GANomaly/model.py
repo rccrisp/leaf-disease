@@ -329,5 +329,5 @@ class ganomalyModel(nn.Module):
         padded_batch = pad_nextpow2(batch)
 
         fake, latent_i, latent_o = self.generator(padded_batch)
-
+        
         return padded_batch, fake, latent_i, latent_o
