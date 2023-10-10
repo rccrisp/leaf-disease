@@ -169,6 +169,7 @@ class anomaleafModel(nn.Module):
         mask = next(self.mask_gen)
         assert mask[0].max() == 1, f"No input was masked ({mask[0].min()},{mask[0].max()})"
         mask = mask.to(batch.device)
+        mask = mask[:batch.shape[0]]
         assert mask.device == batch.device, f"Different devices: masks ({mask.device} batch ({batch.device}))"
 
         # grayscale
@@ -180,7 +181,7 @@ class anomaleafModel(nn.Module):
         copy = batch.clone()
         assert grayscale.device == copy.device, f"Different devices: grayscale ({grayscale.device}) copy ({copy.device})"
         assert grayscale.size() == copy.size(), f"grayscale shape ({grayscale.size()}) does not match original shape ({copy.size()})"
-        print(f"replace_mask {replace_mask.size()}, grayscale {grayscale.size()}, copy {copy.size}")
+        print(f"replace_mask {replace_mask.size()}, grayscale {grayscale.size()}, copy {copy.size()}")
         mask_A_batch = torch.where(replace_mask, grayscale, copy)
         assert mask_A_batch.size() == copy.size(), f"mask shape ({mask_A_batch.size()}) does not match original shape ({copy.size()})"
 
