@@ -65,6 +65,8 @@ class anomaLEAF(pl.LightningModule):
         self.visualise_training = visualise_training
         self.example_image = None
 
+        self.training_reconstruction_loss = float('-inf')
+
         # important for training with multiple optimizers
         self.automatic_optimization = False
 
@@ -143,11 +145,35 @@ class anomaLEAF(pl.LightningModule):
         self.manual_backward(gen_loss)
         gen_optimiser.step()
 
+        #################################
+        # Adaptive Threshold Classifier #
+        #################################
+        # reconstruction loss
+        heatmap = torch.abs(output["real"] - output["fake_B"])
+        heatmap = torch.sum(heatmap, dim=1, keepdim=True)
+        score, _ = self.model.classifier(heatmap, self.model.threshold)
+        max_score, _ = torch.max(score, dim=0)
+        if self.training_reconstruction_loss < max_score:
+            self.training_reconstruction_loss = max_score
+
         # Log
         self.log("train_disc_loss", disc_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("train_gen_loss", gen_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        
+        self.log("train_score", max_score, on_step=False, on_epoch=True, prog_bar=True, logger=self.logger )
+
         return {"gen_loss": gen_loss, "disc_loss": disc_loss}
+    
+    def on_train_epoch_end(self) -> None:
+        """During training, update the classifier threshold with the expected loss for normal samples
+        """
+        output = super().on_train_epoch_end()
+
+        if self.training_reconstruction_loss < self.model.threshold:
+            self.model.threshold = self.training_reconstruction_loss
+        
+        self.training_reconstruction_loss = float("-inf")
+
+        return output
 
     def validation_step(self, batch: dict[str, str | Tensor], *args, **kwargs) :
         """Update min and max scores from the current step.
@@ -188,9 +214,19 @@ class anomaLEAF(pl.LightningModule):
         # loss
         gen_loss = self.generator_loss(patch_map=pred_fake, real=padded, fake=fake)
 
+        #################################
+        # Adaptive Threshold Classifier #
+        #################################
+        # reconstruction loss
+        heatmap = torch.abs(padded - fake)
+        heatmap = torch.sum(heatmap, dim=1, keepdim=True)
+        score, _ = self.model.classifier(heatmap, self.model.threshold)
+        max_score, _ = torch.max(score, dim=0)
+
         # log
         self.log("val_disc_loss", disc_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("val_gen_loss", gen_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("val_score", max_score, on_step=False, on_epoch=True, prog_bar=True, logger=self.logger )
     
     def predict_step(self, batch: dict[str, str | Tensor], batch_idx):
 

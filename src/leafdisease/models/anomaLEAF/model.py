@@ -128,6 +128,28 @@ class Discriminator(nn.Module):
             if isinstance(m, ConvBlock):
                 nn.init.normal(m.conv.weight, mean, std)
 
+class Classifier(nn.Module):
+    def __init__(self, kernel_size: int,
+                 padding: int):
+        super(Classifier, self).__init__()
+
+        self.input_layer = nn.AvgPool2d(kernel_size=kernel_size,padding=padding)
+
+    def forward(self, batch: Tensor, threshold: float):
+
+        # sum loss across all channels
+        output = torch.sum(batch,dim=1)
+
+        # apply pooling
+        output = self.input_layer(output)
+
+        # extract the maximum value
+        score, _ = torch.max(output.view(8, -1), dim=1)
+
+        label = score < threshold
+
+        return score, label
+
 class anomaleafModel(nn.Module):
     """AnomaLEAF Model
     
@@ -145,6 +167,7 @@ class anomaleafModel(nn.Module):
         input_size: tuple[int, int],
         n_features: int,
         num_input_channels=3,
+        anomaly_size: int = 4,
         k: int = 16
     )-> None:
         super().__init__()
@@ -162,7 +185,14 @@ class anomaleafModel(nn.Module):
         )
         self.discriminator.normal_weight_init()
 
+        self.classifier: Classifier = Classifier(
+            kernel_size=anomaly_size,
+            padding=0
+        )
+
         self.mask_gen = generate_masks(k_list=[k], n=batch_size, im_size=input_size[0], num_channels=num_input_channels)
+
+        self.threshold = float('inf')
 
     def mask_input(self, batch: Tensor) -> Tensor:
         # create masks
@@ -218,6 +248,11 @@ class anomaleafModel(nn.Module):
             replace_mask = mask.eq(0)
             fake = torch.where(replace_mask, fake_A, fake_B)
             assert fake.size() == batch.size(), f"generated image ({fake.size()}) does not match original image ({batch.size()})"
+            
+            # reconstruction loss
+            heatmap = torch.abs(fake - padded)
+            heatmap = torch.sum(heatmap, dim=1, keepdim=True)
+            score, label = self.classifier(heatmap, self.threshold)
 
-            return {"real": padded.permute(0, 2, 3, 1).cpu().numpy(), "fake": fake.detach().permute(0, 2, 3, 1).cpu().numpy()}
+            return {"real": padded.permute(0, 2, 3, 1).cpu().numpy(), "fake": fake.detach().permute(0, 2, 3, 1).cpu().numpy(), "pred_score": score, "pred_label": label}
       
