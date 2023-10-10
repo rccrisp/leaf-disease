@@ -14,6 +14,7 @@ import torch
 import pytorch_lightning as pl
 from torch import Tensor, optim
 import torchvision
+import os
 
 from leafdisease.utils.image import pad_nextpow2
 from .model import ganomalyModel
@@ -202,7 +203,7 @@ class Ganomaly(pl.LightningModule):
             num_samples = self.example_images.size(0)
             fake = generated_samples["fake"]
             grid = torchvision.utils.make_grid(fake, nrow=int(num_samples**0.5))
-            filename = f"anomaLEAF_fake_epoch={epoch}.png"
+            filename = f"GANomaly_fake_epoch={epoch}.png"
             save_path = os.path.join(self.save_example_dir, filename)
             torchvision.utils.save_image(grid, save_path)
             
