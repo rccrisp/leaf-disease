@@ -16,7 +16,7 @@ from torch import Tensor, optim
 import torchvision
 
 from leafdisease.utils.image import pad_nextpow2
-from .model import Generator, Discriminator
+from .model import ganomalyModel
 from .loss import GeneratorLoss, DiscriminatorLoss
 
 logger = logging.getLogger(__name__)
@@ -49,27 +49,20 @@ class Ganomaly(pl.LightningModule):
         lr: float = 0.0002,
         beta1: float = 0.5,
         beta2: float = 0.999,
-        visualise_training=False
+        save_examples_every_n_epochs: int = 10,
+        example_images: Tensor = None,
+        save_example_dir: str = "examples"
     ) -> None:
         super().__init__()
 
-        self.generator: Generator = Generator(
+        self.model: ganomalyModel = ganomalyModel(
             input_size=input_size,
+            n_features=n_features,
             latent_vec_size=latent_vec_size,
             num_input_channels=num_input_channels,
-            n_features=n_features,
             extra_layers=extra_layers,
-            add_final_conv_layer=add_final_conv_layer,
+            add_final_conv_layer=add_final_conv_layer
         )
-        self.weights_init(self.generator)
-        
-        self.discriminator: Discriminator = Discriminator(
-            input_size=input_size,
-            num_input_channels=num_input_channels,
-            n_features=n_features,
-            extra_layers=extra_layers,
-        )
-        self.weights_init(self.discriminator)
 
         self.generator_loss = GeneratorLoss(wadv, wcon, wenc)
         self.discriminator_loss = DiscriminatorLoss()
@@ -78,26 +71,13 @@ class Ganomaly(pl.LightningModule):
         self.beta1 = beta1
         self.beta2 = beta2
 
-        self.visualise_training = visualise_training
-        self.example_image = None
+        # for visualising GAN training
+        self.save_n_epochs = save_examples_every_n_epochs
+        self.example_images = example_images
+        self.save_example_dir = save_example_dir
 
         # important for training with multiple optimizers
         self.automatic_optimization = False
-
-    @staticmethod
-    def weights_init(module: torch.nn.Module) -> None:
-        """Initialize DCGAN weights.
-
-        Args:
-            module (nn.Module): [description]
-        """
-        classname = module.__class__.__name__
-        if classname.find("Conv") != -1:
-            torch.nn.init.normal_(module.weight.data, 0.0, 0.02)
-        elif classname.find("BatchNorm") != -1:
-            torch.nn.init.normal_(module.weight.data, 1.0, 0.02)
-            torch.nn.init.constant_(module.bias.data, 0)
-
 
     def configure_optimizers(self) -> list[optim.Optimizer]:
         """Configures optimizers for each decoder.
@@ -106,25 +86,16 @@ class Ganomaly(pl.LightningModule):
             Optimizer: Adam optimizer for each decoder
         """
         optimizer_d = optim.Adam(
-            self.discriminator.parameters(),
+            self.model.discriminator.parameters(),
             lr=self.learning_rate,
             betas=(self.beta1, self.beta2),
         )
         optimizer_g = optim.Adam(
-            self.generator.parameters(),
+            self.model.generator.parameters(),
             lr=self.learning_rate,
             betas=(self.beta1, self.beta2),
         )
-        return [optimizer_d, optimizer_g]
-    
-    def forward(self, batch):
-        padded_batch = pad_nextpow2(batch)
-
-        fake, latent_i, latent_o = self.generator(padded_batch)
-
-        return padded_batch, fake, latent_i, latent_o
-        
-        
+        return [optimizer_d, optimizer_g]    
 
     def training_step(
         self, batch: dict[str, str | Tensor], batch_idx: int
@@ -145,10 +116,10 @@ class Ganomaly(pl.LightningModule):
         ##########################
         # Optimize Discriminator #
         ##########################
-        padded, fake, _, _ = self(batch["image"])
+        padded, fake, _, _ = self.model(batch["image"])
 
-        pred_real, _ = self.discriminator(padded)
-        pred_fake, _ = self.discriminator(fake)
+        pred_real, _ = self.model.discriminator(padded)
+        pred_fake, _ = self.model.discriminator(fake)
 
         # loss
         disc_loss = self.discriminator_loss(pred_real, pred_fake)
@@ -161,10 +132,10 @@ class Ganomaly(pl.LightningModule):
         ######################
         # Optimize Generator #
         ######################
-        padded, fake, latent_i, latent_o = self(batch["image"])
+        padded, fake, latent_i, latent_o = self.model(batch["image"])
 
-        _, feature_real = self.discriminator(padded)
-        _, feature_fake = self.discriminator(fake)
+        _, feature_real = self.model.discriminator(padded)
+        _, feature_fake = self.model.discriminator(fake)
         
         # loss
         gen_loss = self.generator_loss(latent_i, latent_o, padded, fake, feature_real, feature_fake)
@@ -189,23 +160,19 @@ class Ganomaly(pl.LightningModule):
         Returns:
             (STEP_OUTPUT): Output predictions.
         """
-        
-        if self.visualise_training and self.example_image == None:
-            self.example_image = batch["image"][0]
-            self.example_image = self.example_image.unsqueeze(0)
 
-        padded, fake, latent_i, latent_o = self(batch["image"])
+        padded, fake, latent_i, latent_o = self.model(batch["image"])
 
         # calculate the anomaly score
         score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
         batch_score = torch.mean(score)
 
-        pred_real, _ = self.discriminator(padded)
+        pred_real, _ = self.model.discriminator(padded)
 
-        pred_fake, _ = self.discriminator(fake.detach())
+        pred_fake, _ = self.model.discriminator(fake.detach())
         disc_loss = self.discriminator_loss(pred_real, pred_fake)
         
-        pred_fake, _ = self.discriminator(fake)
+        pred_fake, _ = self.model.discriminator(fake)
         gen_loss = self.generator_loss(latent_i, latent_o, padded, fake, pred_real, pred_fake)
 
         # log
@@ -218,7 +185,7 @@ class Ganomaly(pl.LightningModule):
         del batch_idx
         
         # validation step is used for inference
-        padded, fake, latent_i, latent_o = self(batch["image"])
+        padded, fake, latent_i, latent_o = self.model(batch["image"])
 
         score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
 

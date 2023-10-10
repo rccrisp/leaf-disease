@@ -92,6 +92,7 @@ class anomaLEAF(pl.LightningModule):
             betas=(self.beta1, self.beta2),
         )
         return [optimizer_d, optimizer_g]
+    
 
     def training_step(
         self, batch: dict[str, str | Tensor], batch_idx: int

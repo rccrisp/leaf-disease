@@ -10,6 +10,7 @@ Code adapted from https://github.com/samet-akcay/ganomaly.
 # SPDX-License-Identifier: Apache-2.0
 
 import math
+import torch
 from torch import Tensor, nn
 
 from leafdisease.utils.image import pad_nextpow2
@@ -269,3 +270,64 @@ class Decoder(nn.Module):
         output = self.extra_layers(output)
         output = self.final_layers(output)
         return output
+
+class ganomalyModel(nn.Module):
+    """AnomaLEAF Model
+    
+    Args:
+        batch_size (int): Batch size
+        input_size (tuple[int, int]): Input dimension.
+        n_features (int): Number of features layers in the CNNs.
+        latent_vec_size (int): Size of autoencoder latent vector.
+        extra_layers (int, optional): Number of extra layers for encoder/decoder. Defaults to 0.
+        add_final_conv_layer (bool, optional): Add convolution layer at the end. Defaults to True.
+        k (int, optional): Tile size
+    """
+    def __init__(self,
+        input_size: tuple[int, int],
+        n_features: int,
+        latent_vec_size: int,
+        num_input_channels=3,
+        extra_layers: bool = False,
+        add_final_conv_layer: bool = True
+        )-> None:
+        super().__init__()
+
+        self.generator: Generator = Generator(
+            input_size=input_size,
+            latent_vec_size=latent_vec_size,
+            num_input_channels=num_input_channels,
+            n_features=n_features,
+            extra_layers=extra_layers,
+            add_final_conv_layer=add_final_conv_layer,
+        )
+        self.weights_init(self.generator)
+        
+        self.discriminator: Discriminator = Discriminator(
+            input_size=input_size,
+            num_input_channels=num_input_channels,
+            n_features=n_features,
+            extra_layers=extra_layers,
+        )
+        self.weights_init(self.discriminator)
+
+    @staticmethod
+    def weights_init(module: torch.nn.Module) -> None:
+        """Initialize DCGAN weights.
+
+        Args:
+            module (nn.Module): [description]
+        """
+        classname = module.__class__.__name__
+        if classname.find("Conv") != -1:
+            torch.nn.init.normal_(module.weight.data, 0.0, 0.02)
+        elif classname.find("BatchNorm") != -1:
+            torch.nn.init.normal_(module.weight.data, 1.0, 0.02)
+            torch.nn.init.constant_(module.bias.data, 0)
+
+    def forward(self, batch):
+        padded_batch = pad_nextpow2(batch)
+
+        fake, latent_i, latent_o = self.generator(padded_batch)
+
+        return padded_batch, fake, latent_i, latent_o
