@@ -57,7 +57,7 @@ class anomaLEAF(pl.LightningModule):
             n_features=n_features,
             num_input_channels=num_input_channels,
             k=mask_size,
-            anomaly_size=anomaly_size=
+            anomaly_size=anomaly_size
         )
 
         self.generator_loss = GeneratorLoss(wadv=wadv,wcon=wcon)
