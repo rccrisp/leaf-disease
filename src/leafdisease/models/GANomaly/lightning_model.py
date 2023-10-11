@@ -117,10 +117,10 @@ class Ganomaly(pl.LightningModule):
         ##########################
         # Optimize Discriminator #
         ##########################
-        padded, fake, _, _ = self.model(batch["image"])
+        output = self.model(batch["image"])
 
-        pred_real, _ = self.model.discriminator(padded)
-        pred_fake, _ = self.model.discriminator(fake)
+        pred_real, _ = self.model.discriminator(output["real"])
+        pred_fake, _ = self.model.discriminator(output["fake"])
 
         # loss
         disc_loss = self.discriminator_loss(pred_real, pred_fake)
@@ -133,13 +133,13 @@ class Ganomaly(pl.LightningModule):
         ######################
         # Optimize Generator #
         ######################
-        padded, fake, latent_i, latent_o = self.model(batch["image"])
+        output = self.model(batch["image"])
 
-        _, feature_real = self.model.discriminator(padded)
-        _, feature_fake = self.model.discriminator(fake)
+        _, feature_real = self.model.discriminator(output["real"])
+        _, feature_fake = self.model.discriminator(output["fake"])
         
         # loss
-        gen_loss = self.generator_loss(latent_i, latent_o, padded, fake, feature_real, feature_fake)
+        gen_loss = self.generator_loss(output["latent_i"], output["latent_o"], output["real"], output["fake"], feature_real, feature_fake)
 
         # Generator grad calculations
         gen_optimiser.zero_grad()
@@ -149,8 +149,8 @@ class Ganomaly(pl.LightningModule):
         #################
         # Anomaly Score #
         #################
-        score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
-        batch_score = torch.mean(score)
+        score = torch.mean(torch.pow((output["latent_i"] - output["latent_o"]), 2), dim=1).view(-1)
+        batch_score, _ = torch.max(score, dim=0)
 
         # Log
         self.log("train_disc_loss", disc_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
@@ -169,46 +169,45 @@ class Ganomaly(pl.LightningModule):
             (STEP_OUTPUT): Output predictions.
         """
 
-        padded, fake, latent_i, latent_o = self.model(batch["image"])
+        real = pad_nextpow2(batch["image"])
+        fake, latent_i, latent_o = self.model.generator(real)
 
-        # calculate the anomaly score
-        score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
-        batch_score = torch.mean(score)
-
-        pred_real, _ = self.model.discriminator(padded)
-
+        ######################
+        # Discriminator Loss #
+        ######################
+        pred_real, _ = self.model.discriminator(real)
         pred_fake, _ = self.model.discriminator(fake.detach())
         disc_loss = self.discriminator_loss(pred_real, pred_fake)
         
+        ##################
+        # Generator Loss #
+        ##################
         pred_fake, _ = self.model.discriminator(fake)
-        gen_loss = self.generator_loss(latent_i, latent_o, padded, fake, pred_real, pred_fake)
+        gen_loss = self.generator_loss(latent_i, latent_o, real, fake, pred_real, pred_fake)
+
+        #################
+        # Anomaly Score #
+        #################
+        assert latent_i.size()[0] == real.size()[0], f"{latent_i.size()} {real.size()}"
+        score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
+        assert score.size()[0] == score.size()[0], f"{score.size()} {real.size()}"
+        batch_score, _ = torch.max(score, dim=0)
 
         # log
-        self.log("val_score", batch_score.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("val_disc_loss", disc_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("val_gen_loss", gen_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-    
-    def predict_step(self, batch: dict[str, str | Tensor], batch_idx):
-
-        del batch_idx
-        
-        # validation step is used for inference
-        padded, fake, latent_i, latent_o = self.model(batch["image"])
-
-        score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
-
-        return {"real": padded, "generated": fake, "anomaly_score": score, "filename": batch["filename"]}
+        self.log("val_score", batch_score.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
 
     def generate_and_save_samples(self, epoch):
         # Generate and save example images
         self.eval()  # Set the model to evaluation mode to ensure deterministic results
         with torch.no_grad():
             # Generate samples from your GAN
-            _, fake, _, _ = self.model(self.example_images)
+            output = self.model(self.example_images)
 
             # Convert generated samples to a grid for visualization (using torchvision)
             num_samples = self.example_images.size(0)
-            grid = torchvision.utils.make_grid(fake, nrow=int(num_samples**0.5))
+            grid = torchvision.utils.make_grid(output["fake"], nrow=int(num_samples**0.5))
             filename = f"GANomaly_fake_epoch={epoch}.png"
             save_path = os.path.join(self.save_example_dir, filename)
             torchvision.utils.save_image(grid, save_path)

@@ -289,7 +289,8 @@ class ganomalyModel(nn.Module):
         latent_vec_size: int,
         num_input_channels=3,
         extra_layers: bool = False,
-        add_final_conv_layer: bool = True
+        add_final_conv_layer: bool = True,
+        threshold: float = float('-inf')
         )-> None:
         super().__init__()
 
@@ -311,6 +312,8 @@ class ganomalyModel(nn.Module):
         )
         self.weights_init(self.discriminator)
 
+        self.threshold = threshold
+
     @staticmethod
     def weights_init(module: torch.nn.Module) -> None:
         """Initialize DCGAN weights.
@@ -329,5 +332,10 @@ class ganomalyModel(nn.Module):
         padded_batch = pad_nextpow2(batch)
 
         fake, latent_i, latent_o = self.generator(padded_batch)
-        
-        return padded_batch, fake, latent_i, latent_o
+
+        if self.training:
+            return {"real": padded_batch, "fake": fake, "latent_i": latent_i, "latent_o": latent_o}
+        else:
+            score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
+            label = score < self.threshold
+            return {"real": padded_batch, "fake": fake, "pred_score": score, "pred_label": label}
