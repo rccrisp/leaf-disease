@@ -135,20 +135,18 @@ class Classifier(nn.Module):
 
         self.input_layer = nn.AvgPool2d(kernel_size=kernel_size,padding=padding)
 
-    def forward(self, batch: Tensor, threshold: float):
+    def forward(self, batch: Tensor):
 
         # sum loss across all channels
         output = torch.sum(batch,dim=1)
-
+        
         # apply pooling
         output = self.input_layer(output)
 
         # extract the maximum value
-        score, _ = torch.max(output.view(8, -1), dim=1)
+        score, _ = torch.max(output.view(output.size(0), -1), dim=1)
 
-        label = score < threshold
-
-        return score, label
+        return score
 
 class anomaleafModel(nn.Module):
     """AnomaLEAF Model
@@ -168,7 +166,8 @@ class anomaleafModel(nn.Module):
         n_features: int,
         num_input_channels=3,
         anomaly_size: int = 4,
-        k: int = 16
+        k: int = 16,
+        threshold: float = float('-inf')
     )-> None:
         super().__init__()
         self.generator: Generator = Generator(
@@ -192,7 +191,7 @@ class anomaleafModel(nn.Module):
 
         self.mask_gen = generate_masks(k_list=[k], n=batch_size, im_size=input_size[0], num_channels=num_input_channels)
 
-        self.threshold = float('inf')
+        self.threshold = threshold
 
     def mask_input(self, batch: Tensor) -> Tensor:
         # create masks
@@ -233,26 +232,31 @@ class anomaleafModel(nn.Module):
         """
         padded = pad_nextpow2(batch)
 
-        # create masks
+         # create masks
         mask_A, mask_B, mask = self.mask_input(padded)
 
-        # regenerate from masks
-        fake_A = self.generator(mask_A)
-        fake_B = self.generator(mask_B)
-
+        # when training we will evaluate only on one mask
         if self.training:
-            return {"real": padded, "input_A": mask_A, "fake_A": fake_A, "input_B": mask_B, "fake_B": fake_B}
+            fake_B = self.generator(mask_B)
+            return {"real": padded, "input": mask_B, "fake": fake_B}
+        # when predicting, we will regenerate the whole image
         else:
+            # regenerate from masks
+            fake_A = self.generator(mask_A)
+            fake_B = self.generator(mask_B)
+
              # reconstruct image
             fake = fake_A.clone()
             replace_mask = mask.eq(0)
             fake = torch.where(replace_mask, fake_A, fake_B)
             assert fake.size() == batch.size(), f"generated image ({fake.size()}) does not match original image ({batch.size()})"
             
-            # reconstruction loss
+            # score
             heatmap = torch.abs(fake - padded)
             heatmap = torch.sum(heatmap, dim=1, keepdim=True)
-            score, label = self.classifier(heatmap, self.threshold)
+            score = self.classifier(heatmap)
+            assert score.size()[0] == heatmap.size()[0], f"Score ({score.size()[0]}) does not match expected batch size ({heatmap.size()[0]})"
+            label = score < self.threshold
 
-            return {"real": padded.detach(), "fake": fake.detach(), "pred_score": score, "pred_label": label}
+            return {"real": padded, "fake": fake, "pred_score": score, "pred_label": label}
       

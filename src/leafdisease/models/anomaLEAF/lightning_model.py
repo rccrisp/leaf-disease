@@ -38,6 +38,7 @@ class anomaLEAF(pl.LightningModule):
         input_size: tuple[int, int],
         n_features: int,
         mask_size: int = 16,
+        anomaly_size: int = 8,
         num_input_channels=3,
         wadv: int = 1,
         wcon: int = 100,
@@ -55,7 +56,8 @@ class anomaLEAF(pl.LightningModule):
             input_size=input_size,
             n_features=n_features,
             num_input_channels=num_input_channels,
-            k=mask_size
+            k=mask_size,
+            anomaly_size=anomaly_size=
         )
 
         self.generator_loss = GeneratorLoss(wadv=wadv,wcon=wcon)
@@ -69,8 +71,6 @@ class anomaLEAF(pl.LightningModule):
         self.save_n_epochs = save_examples_every_n_epochs
         self.example_images = example_images
         self.save_example_dir = save_example_dir
-
-        self.training_reconstruction_loss = float('-inf')
 
         # important for training with multiple optimizers
         self.automatic_optimization = False
@@ -114,20 +114,10 @@ class anomaLEAF(pl.LightningModule):
         # Optimize Discriminator #
         ##########################
         output = self.model(batch["image"])
-        # mask
-        pred_real_A = self.model.discriminator(input_tensor=output["input_A"], target_tensor=output["real"])
-        pred_fake_A = self.model.discriminator(input_tensor=output["input_A"], target_tensor=output["fake_A"])
+        pred_real = self.model.discriminator(input_tensor=output["input"], target_tensor=output["real"])
+        pred_fake = self.model.discriminator(input_tensor=output["input"], target_tensor=output["fake"])
         # loss
-        disc_loss_A = self.discriminator_loss(pred_real_A, pred_fake_A)
-
-        # inv mask
-        pred_real_B = self.model.discriminator(input_tensor=output["input_B"], target_tensor=output["real"])
-        pred_fake_B = self.model.discriminator(input_tensor=output["input_B"], target_tensor=output["fake_B"])
-        # loss
-        disc_loss_B = self.discriminator_loss(pred_real_B, pred_fake_B)
-        
-        # total disc loss
-        disc_loss = disc_loss_A + disc_loss_B
+        disc_loss = self.discriminator_loss(pred_real, pred_fake)
 
         # Discriminator grad calculations
         disc_optimiser.zero_grad()
@@ -138,29 +128,23 @@ class anomaLEAF(pl.LightningModule):
         # Optimize Generator #
         ######################
         output = self.model(batch["image"])
-        pred_fake_A = self.model.discriminator(input_tensor=output["input_A"], target_tensor=output["fake_A"])
-        pred_fake_B = self.model.discriminator(input_tensor=output["input_B"], target_tensor=output["fake_B"])
+        pred_fake = self.model.discriminator(input_tensor=output["input"], target_tensor=output["fake"])
         # loss
-        gen_loss_A = self.generator_loss(patch_map=pred_fake_A, real=output["real"], fake=output["fake_A"])
-        gen_loss_B = self.generator_loss(patch_map=pred_fake_B, real=output["real"], fake=output["fake_B"])
-
-        gen_loss = gen_loss_A + gen_loss_B
+        gen_loss = self.generator_loss(patch_map=pred_fake, real=output["real"], fake=output["fake"])
 
         # Generator grad calculations
         gen_optimiser.zero_grad()
         self.manual_backward(gen_loss)
         gen_optimiser.step()
 
-        #################################
-        # Adaptive Threshold Classifier #
-        #################################
+        #################
+        # Anomaly Score #
+        #################
         # reconstruction loss
-        heatmap = torch.abs(output["real"] - output["fake_B"])
+        heatmap = torch.abs(output["real"] - output["fake"])
         heatmap = torch.sum(heatmap, dim=1, keepdim=True)
-        score, _ = self.model.classifier(heatmap, self.model.threshold)
+        score = self.model.classifier(heatmap)
         max_score, _ = torch.max(score, dim=0)
-        if self.training_reconstruction_loss < max_score:
-            self.training_reconstruction_loss = max_score
 
         # Log
         self.log("train_disc_loss", disc_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
@@ -168,18 +152,6 @@ class anomaLEAF(pl.LightningModule):
         self.log("train_score", max_score, on_step=False, on_epoch=True, prog_bar=True, logger=self.logger )
 
         return {"gen_loss": gen_loss, "disc_loss": disc_loss}
-    
-    def on_train_epoch_end(self) -> None:
-        """During training, update the classifier threshold with the expected loss for normal samples
-        """
-        output = super().on_train_epoch_end()
-
-        if self.training_reconstruction_loss < self.model.threshold:
-            self.model.threshold = self.training_reconstruction_loss
-        
-        self.training_reconstruction_loss = float("-inf")
-
-        return output
 
     def validation_step(self, batch: dict[str, str | Tensor], *args, **kwargs) :
         """Update min and max scores from the current step.
@@ -211,17 +183,16 @@ class anomaLEAF(pl.LightningModule):
         ######################
         # Evaluate Generator #
         ######################
-        
         # loss
         gen_loss = self.generator_loss(patch_map=pred_fake, real=padded, fake=fake)
 
-        #################################
-        # Adaptive Threshold Classifier #
-        #################################
+        #################
+        # Anomaly Score #
+        #################
         # reconstruction loss
         heatmap = torch.abs(padded - fake)
         heatmap = torch.sum(heatmap, dim=1, keepdim=True)
-        score, _ = self.model.classifier(heatmap, self.model.threshold)
+        score = self.model.classifier(heatmap)
         max_score, _ = torch.max(score, dim=0)
 
         # log
@@ -229,15 +200,6 @@ class anomaLEAF(pl.LightningModule):
         self.log("val_gen_loss", gen_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("val_score", max_score, on_step=False, on_epoch=True, prog_bar=True, logger=self.logger )
     
-    def predict_step(self, batch: dict[str, str | Tensor], batch_idx):
-
-        del batch_idx
-        
-        # validation step is used for inference
-        output = self(batch["image"])
-        output["filename"] = batch["filename"]
-
-        return output
 
     def generate_and_save_samples(self, epoch):
         # Generate and save example images
