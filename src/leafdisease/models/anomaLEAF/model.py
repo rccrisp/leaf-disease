@@ -219,7 +219,7 @@ class anomaleafModel(nn.Module):
         mask_B_batch = torch.where(replace_mask_inv, grayscale, copy)
         assert mask_B_batch.size() == copy.size(), f"mask shape ({mask_B_batch.size()}) does not match original shape ({copy.size()})"
 
-        return mask_A_batch, mask_B_batch, mask
+        return mask_A_batch, mask_B_batch, mask, grayscale
 
     def forward(self, batch: Tensor):
         """Get scores for batch
@@ -233,22 +233,22 @@ class anomaleafModel(nn.Module):
         padded = pad_nextpow2(batch)
 
          # create masks
-        mask_A, mask_B, mask = self.mask_input(padded)
+        mask_A, mask_B, mask, grayscale = self.mask_input(padded)
+
+        # regenerate from masks
+        fake_A = self.generator(mask_A)
+        fake_B = self.generator(mask_B)
+
+        # reconstruct image
+        fake = fake_A.clone()
+        replace_mask = mask.eq(0)
+        fake = torch.where(replace_mask, fake_A, fake_B)
 
         # when training we will evaluate only on one mask
         if self.training:
-            fake_B = self.generator(mask_B)
-            return {"real": padded, "input": mask_B, "fake": fake_B}
+            return {"real": padded, "input": grayscale, "fake": fake}
         # when predicting, we will regenerate the whole image
         else:
-            # regenerate from masks
-            fake_A = self.generator(mask_A)
-            fake_B = self.generator(mask_B)
-
-             # reconstruct image
-            fake = fake_A.clone()
-            replace_mask = mask.eq(0)
-            fake = torch.where(replace_mask, fake_A, fake_B)
             assert fake.size() == batch.size(), f"generated image ({fake.size()}) does not match original image ({batch.size()})"
             
             # score
