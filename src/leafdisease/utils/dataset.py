@@ -15,6 +15,10 @@ class CustomImageDataset(Dataset):
         filename = self.filenames[idx]
         image_path = os.path.join(self.data_dir, filename)
         image = Image.open(image_path)
+        # Check the number of channels in the image
+        if image.mode == "L":
+            # Skip images with only one channel
+            return None
         if self.transform:
             image = self.transform(image)
         return {"filename": filename, "image": image}
