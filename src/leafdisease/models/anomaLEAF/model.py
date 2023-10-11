@@ -256,7 +256,7 @@ class anomaleafModel(nn.Module):
             heatmap = torch.sum(heatmap, dim=1, keepdim=True)
             score = self.classifier(heatmap)
             assert score.size()[0] == heatmap.size()[0], f"Score ({score.size()[0]}) does not match expected batch size ({heatmap.size()[0]})"
-            label = score < self.threshold
+            label = self.threshold < score
 
             return {"real": padded, "fake": fake, "pred_score": score, "pred_label": label}
       

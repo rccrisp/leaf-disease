@@ -337,5 +337,5 @@ class ganomalyModel(nn.Module):
             return {"real": padded_batch, "fake": fake, "latent_i": latent_i, "latent_o": latent_o}
         else:
             score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
-            label = score < self.threshold
+            label = self.threshold < score
             return {"real": padded_batch, "fake": fake, "pred_score": score, "pred_label": label}
