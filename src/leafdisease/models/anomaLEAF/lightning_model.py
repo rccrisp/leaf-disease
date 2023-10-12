@@ -123,6 +123,7 @@ class anomaLEAF(pl.LightningModule):
         loss = self.gamma * l2_loss + self.alpha * gms_loss + self.tau * ssim_loss
 
         # Log
+        self.log("train_loss", loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("train_l2_loss", l2_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("train_gms_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("train_ssim_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
@@ -152,6 +153,7 @@ class anomaLEAF(pl.LightningModule):
         loss = self.gamma * l2_loss + self.alpha * gms_loss + self.tau * ssim_loss
 
         # Log
+        self.log("val_loss", loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("val_l2_loss", l2_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("val_gms_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("val_ssim_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
