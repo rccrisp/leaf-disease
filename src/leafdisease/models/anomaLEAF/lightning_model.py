@@ -36,6 +36,7 @@ class anomaLEAF(pl.LightningModule):
         self,
         input_size: tuple[int, int],
         n_features: int,
+        blackout: bool = False,
         num_input_channels=3,
         gamma: int = 1,
         alpha: int = 1,
@@ -54,6 +55,7 @@ class anomaLEAF(pl.LightningModule):
             n_features=n_features,
             anomaly_score_func=MSGMS_Score(),
             num_input_channels=num_input_channels,
+            blackout=blackout
         )
 
         # Loss functions
