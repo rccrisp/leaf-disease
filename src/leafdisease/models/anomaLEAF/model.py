@@ -169,6 +169,7 @@ class anomaleafModel(nn.Module):
         """
         padded = pad_nextpow2(batch)
 
+        leaf_segment = (padded != 0).float()
         # create masks
         if self.training:
             k_list = random.sample(self.k_values, 1)
@@ -180,8 +181,9 @@ class anomaleafModel(nn.Module):
 
             outputs = [self.generator(x) for x in inputs]
             output = sum(map(lambda x, y: x * (1 - y.clone().detach().requires_grad_(False)), outputs, masks))
+            output = output * leaf_segment
 
-            return {"real": padded, "fake": output}
+            return {"real": padded, "fake": output, "inputs": inputs}
         else :
             score = 0
             for k in self.k_values:
@@ -197,7 +199,8 @@ class anomaleafModel(nn.Module):
                 inputs = [padded * mask.clone().detach().requires_grad_(False) for mask in masks]
                 outputs = [self.generator(x) for x in inputs]
                 output = sum(map(lambda x, y: x * (1 - y.clone().detach().requires_grad_(False)), outputs, masks))
-
+                output = output * leaf_segment
+                
                 score += self.anomaly_score(padded, output) / (N**2)
 
             score = score.detach().squeeze().cpu().numpy()
