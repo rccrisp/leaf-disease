@@ -14,13 +14,13 @@ class ConvBlock(nn.Module):
         super(ConvBlock, self).__init__()
         self.conv = nn.Conv2d(input_size, output_size, kernel_size, stride, padding)
         self.activation = activation
-        self.lrelu = nn.LeakyReLU(0.2, True)
+        self.relu = nn.ReLU()
         self.batch_norm = batch_norm
         self.bn = nn.BatchNorm2d(output_size)
 
     def forward(self, x):
         if self.activation:
-            out = self.conv(self.lrelu(x))
+            out = self.conv(self.relu(x))
         else:
             out = self.conv(x)
 
@@ -54,25 +54,23 @@ class UNet(nn.Module):
     def __init__(self, input_dim, num_filter=64, output_dim=3):
         super(UNet, self).__init__()
 
-        # Encoder
         self.conv1 = ConvBlock(input_dim, num_filter, activation=False, batch_norm=False)
         self.conv2 = ConvBlock(num_filter, num_filter * 2)
         self.conv3 = ConvBlock(num_filter * 2, num_filter * 4)
         self.conv4 = ConvBlock(num_filter * 4, num_filter * 8)
         self.conv5 = ConvBlock(num_filter * 8, num_filter * 8)
-        # self.conv6 = ConvBlock(num_filter * 8, num_filter * 8)
-        # self.conv7 = ConvBlock(num_filter * 8, num_filter * 8)
-        # self.conv8 = ConvBlock(num_filter * 8, num_filter * 8, batch_norm=False)
-
+        self.conv6 = ConvBlock(num_filter * 8, num_filter * 8)
+        self.conv7 = ConvBlock(num_filter * 8, num_filter * 8)
+        self.conv8 = ConvBlock(num_filter * 8, num_filter * 8)
         # Decoder
         self.deconv1 = DeconvBlock(num_filter * 8, num_filter * 8)
         self.deconv2 = DeconvBlock(num_filter * 8 * 2, num_filter * 8)
-        self.deconv3 = DeconvBlock(num_filter * 8 * 2, num_filter * 4)
-        self.deconv4 = DeconvBlock(num_filter * 4 * 2, num_filter * 2)
-        self.deconv5 = DeconvBlock(num_filter * 2 * 2, output_dim)
-        # self.deconv6 = DeconvBlock(num_filter * 4 * 2, num_filter * 2)
-        # self.deconv7 = DeconvBlock(num_filter * 2 * 2, num_filter)
-        # self.deconv8 = DeconvBlock(num_filter * 2, output_dim, batch_norm=False)
+        self.deconv3 = DeconvBlock(num_filter * 8 * 2, num_filter * 8)
+        self.deconv4 = DeconvBlock(num_filter * 8 * 2, num_filter * 8)
+        self.deconv5 = DeconvBlock(num_filter * 8 * 2, num_filter * 4)
+        self.deconv6 = DeconvBlock(num_filter * 4 * 2, num_filter * 2)
+        self.deconv7 = DeconvBlock(num_filter * 2 * 2, num_filter)
+        self.deconv8 = DeconvBlock(num_filter * 2, output_dim, batch_norm=False)
 
     def forward(self, x):
         # Encoder
@@ -81,38 +79,30 @@ class UNet(nn.Module):
         enc3 = self.conv3(enc2)
         enc4 = self.conv4(enc3)
         enc5 = self.conv5(enc4)
-        # enc6 = self.conv6(enc5)
-        # enc7 = self.conv7(enc6)
-        # enc8 = self.conv8(enc7)
-       
+        enc6 = self.conv6(enc5)
+        enc7 = self.conv7(enc6)
+        enc8 = self.conv8(enc7)
+
         # Decoder with skip-connections
-        dec1 = self.deconv1(enc5)
-        dec1 = torch.cat([dec1, enc4], 1)
+        dec1 = self.deconv1(enc8)
+        dec1 = torch.cat([dec1, enc7], 1)
         dec2 = self.deconv2(dec1)
-        dec2 = torch.cat([dec2, enc3], 1)
+        dec2 = torch.cat([dec2, enc6], 1)
         dec3 = self.deconv3(dec2)
-        dec3 = torch.cat([dec3, enc2], 1)
+        dec3 = torch.cat([dec3, enc5], 1)
         dec4 = self.deconv4(dec3)
-        dec4 = torch.cat([dec4, enc1], 1)
-        dec5 = self.deconv5
-        out = nn.Tanh()(dec5)
-        # dec5 = self.deconv5(dec4)
-        # dec1 = self.deconv1(enc8)
-        # dec1 = torch.cat([dec1, enc7], 1)
-        # dec2 = self.deconv2(dec1)
-        # dec2 = torch.cat([dec2, enc6], 1)
-        # dec3 = self.deconv3(dec2)
-        # dec3 = torch.cat([dec3, enc5], 1)
-        # dec4 = self.deconv4(dec3)
-        # dec4 = torch.cat([dec4, enc4], 1)
-        # dec5 = self.deconv5(dec4)
-        # dec5 = torch.cat([dec5, enc3], 1)
-        # dec6 = self.deconv6(dec5)
-        # dec6 = torch.cat([dec6, enc2], 1)
-        # dec7 = self.deconv7(dec6)
-        # dec7 = torch.cat([dec7, enc1], 1)
-        # dec8 = self.deconv8(dec7)
-        # out = nn.Sigmoid()(dec8)
+        dec4 = torch.cat([dec4, enc4], 1)
+        dec5 = self.deconv5(dec4)
+        dec5 = torch.cat([dec5, enc3], 1)
+        dec6 = self.deconv6(dec5)
+        dec6 = torch.cat([dec6, enc2], 1)
+        dec7 = self.deconv7(dec6)
+        dec7 = torch.cat([dec7, enc1], 1)
+        dec8 = self.deconv8(dec7)
+
+        # Final layer
+        out = nn.Tanh()(dec8)
+
         return out
 
     def normal_weight_init(self, mean=0.0, std=0.02):
