@@ -8,13 +8,13 @@ import os
 import logging
 import matplotlib.pyplot as plt
 
+import torch.nn as nn
 import torch
 import pytorch_lightning as pl
 from torch import Tensor, optim
 import torchvision
 
-from leafdisease.utils.image import pad_nextpow2
-from .loss import GeneratorLoss, DiscriminatorLoss
+from .loss import SSIM_Loss, MSGMS_Loss, MSGMS_Score
 from .model import anomaleafModel
 
 logger = logging.getLogger(__name__)
@@ -34,14 +34,12 @@ class anomaLEAF(pl.LightningModule):
 
     def __init__(
         self,
-        batch_size: int,
         input_size: tuple[int, int],
         n_features: int,
-        mask_size: int = 16,
-        anomaly_size: int = 8,
         num_input_channels=3,
-        wadv: int = 1,
-        wcon: int = 100,
+        gamma: int = 1,
+        alpha: int = 1,
+        tau: int = 1,
         lr: float = 0.0002,
         beta1: float = 0.5,
         beta2: float = 0.999,
@@ -52,16 +50,22 @@ class anomaLEAF(pl.LightningModule):
         super().__init__()
 
         self.model: anomaleafModel = anomaleafModel(
-            batch_size=batch_size,
             input_size=input_size,
             n_features=n_features,
+            anomaly_score_func=MSGMS_Score(),
             num_input_channels=num_input_channels,
-            k=mask_size,
-            anomaly_size=anomaly_size
         )
 
-        self.generator_loss = GeneratorLoss(wadv=wadv,wcon=wcon)
-        self.discriminator_loss = DiscriminatorLoss()
+        # Loss functions
+        self.l2_loss_func = nn.MSELoss(reduction="mean")
+        self.ssim_loss_func = SSIM_Loss()
+        self.msgms_loss_func = MSGMS_Loss()
+
+        # Loss parameters
+        self.gamma = gamma
+        self.alpha = alpha
+        self.tau = tau
+
 
         self.learning_rate = lr
         self.beta1 = beta1
@@ -72,26 +76,19 @@ class anomaLEAF(pl.LightningModule):
         self.example_images = example_images
         self.save_example_dir = save_example_dir
 
-        # important for training with multiple optimizers
-        self.automatic_optimization = False
-
-    def configure_optimizers(self) -> list[optim.Optimizer]:
-        """Configures optimizers for each decoder.
+    def configure_optimizers(self) -> optim.Optimizer:
+        """Configures optimizers autoencoder.
 
         Returns:
-            Optimizer: Adam optimizer for each decoder
+            Optimizer: Adam optimizer for autoencoder
         """
-        optimizer_d = optim.Adam(
-            self.model.discriminator.parameters(),
-            lr=self.learning_rate,
-            betas=(self.beta1, self.beta2),
-        )
-        optimizer_g = optim.Adam(
+        optimizer = optim.Adam(
             self.model.generator.parameters(),
             lr=self.learning_rate,
             betas=(self.beta1, self.beta2),
         )
-        return [optimizer_d, optimizer_g]
+
+        return optimizer
     
 
     def training_step(
@@ -108,51 +105,24 @@ class anomaLEAF(pl.LightningModule):
         """
         del batch_idx  # `batch_idx` variables is not used.
 
-        disc_optimiser, gen_optimiser = self.optimizers()
-        
-        ##########################
-        # Optimize Discriminator #
-        ##########################
+        # forward step
         output = self.model(batch["image"])
-        pred_real = self.model.discriminator(input_tensor=output["real"], target_tensor=output["real"])
-        pred_fake = self.model.discriminator(input_tensor=output["real"], target_tensor=output["fake"])
+        real = output["real"]
+        fake = output["fake"]
 
         # loss
-        disc_loss = self.discriminator_loss(pred_real, pred_fake)
+        l2_loss = self.l2_loss_func(real, fake)
+        gms_loss = self.msgms_loss_func(real, fake)
+        ssim_loss = self.ssim_loss_func(real, fake)
 
-        # Discriminator grad calculations
-        disc_optimiser.zero_grad()
-        self.manual_backward(disc_loss)
-        disc_optimiser.step()
-
-        ######################
-        # Optimize Generator #
-        ######################
-        output = self.model(batch["image"])
-        pred_fake = self.model.discriminator(input_tensor=output["real"], target_tensor=output["fake"])
-        # loss
-        gen_loss = self.generator_loss(patch_map=pred_fake, real=output["real"], fake=output["fake"])
-
-        # Generator grad calculations
-        gen_optimiser.zero_grad()
-        self.manual_backward(gen_loss)
-        gen_optimiser.step()
-
-        #################
-        # Anomaly Score #
-        #################
-        # reconstruction loss
-        heatmap = torch.abs(output["real"] - output["fake"])
-        heatmap = torch.sum(heatmap, dim=1, keepdim=True)
-        score = self.model.classifier(heatmap)
-        max_score, _ = torch.max(score, dim=0)
+        loss = self.gamma * l2_loss + self.alpha * gms_loss + self.tau * ssim_loss
 
         # Log
-        self.log("train_disc_loss", disc_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        self.log("train_gen_loss", gen_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        self.log("train_score", max_score, on_step=False, on_epoch=True, prog_bar=True, logger=self.logger )
-
-        return {"gen_loss": gen_loss, "disc_loss": disc_loss}
+        self.log("train_l2_loss", l2_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("train_gms_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("train_ssim_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        
+        return loss
 
     def validation_step(self, batch: dict[str, str | Tensor], *args, **kwargs) :
         """Update min and max scores from the current step.
@@ -164,51 +134,25 @@ class anomaLEAF(pl.LightningModule):
             (STEP_OUTPUT): Output predictions.
         """
 
-        # model output
-        padded = pad_nextpow2(batch["image"])
+         # forward step
+        output = self.model(batch["image"])
+        real = output["real"]
+        fake = output["fake"]
 
-        # create masks
-        mask_A, mask_B, mask, grayscale = self.model.mask_input(padded)
+        # loss
+        l2_loss = self.l2_loss_func(real, fake)
+        gms_loss = self.msgms_loss_func(real, fake)
+        ssim_loss = self.ssim_loss_func(real, fake)
 
-        # regenerate from masks
-        fake_A = self.model.generator(mask_A)
-        fake_B = self.model.generator(mask_B)
+        loss = self.gamma * l2_loss + self.alpha * gms_loss + self.tau * ssim_loss
 
-        # reconstruct image
-        fake = fake_A.clone()
-        replace_mask = mask.eq(0)
-        fake = torch.where(replace_mask, fake_A, fake_B)
+        # Log
+        self.log("val_l2_loss", l2_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("val_gms_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("val_ssim_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         
-        ##########################
-        # Evaluate Discriminator #
-        ##########################
-        # mask
-        pred_real = self.model.discriminator(input_tensor=padded, target_tensor=padded)
-        pred_fake = self.model.discriminator(input_tensor=padded, target_tensor=fake)
+        return loss
 
-        # loss
-        disc_loss = self.discriminator_loss(pred_real, pred_fake)
-
-        ######################
-        # Evaluate Generator #
-        ######################
-        # loss
-        gen_loss = self.generator_loss(patch_map=pred_fake, real=padded, fake=fake)
-
-        #################
-        # Anomaly Score #
-        #################
-        # reconstruction loss
-        heatmap = torch.abs(padded - fake)
-        heatmap = torch.sum(heatmap, dim=1, keepdim=True)
-        score = self.model.classifier(heatmap)
-        max_score, _ = torch.max(score, dim=0)
-
-        # log
-        self.log("val_disc_loss", disc_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        self.log("val_gen_loss", gen_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        self.log("val_score", max_score, on_step=False, on_epoch=True, prog_bar=True, logger=self.logger )
-    
 
     def generate_and_save_samples(self, epoch):
         # Generate and save example images

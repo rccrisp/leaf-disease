@@ -1,7 +1,13 @@
 import torch
+from typing import List
 from torch import nn, Tensor
+from scipy.ndimage import gaussian_filter
+import random
 
 from leafdisease.utils.image import pad_nextpow2, generate_masks
+
+use_cuda = torch.cuda.is_available()
+device = torch.device('cuda' if use_cuda else 'cpu')
 
 class ConvBlock(nn.Module):
     def __init__(self, input_size, output_size, kernel_size=4, stride=2, padding=1, activation=True, batch_norm=True):
@@ -44,9 +50,9 @@ class DeconvBlock(nn.Module):
         else:
             return out
 
-class Generator(nn.Module):
+class UNet(nn.Module):
     def __init__(self, input_dim, num_filter, output_dim):
-        super(Generator, self).__init__()
+        super(UNet, self).__init__()
 
         # Encoder
         self.conv1 = ConvBlock(input_dim, num_filter, activation=False, batch_norm=False)
@@ -103,123 +109,51 @@ class Generator(nn.Module):
             if isinstance(m, DeconvBlock):
                 nn.init.normal(m.deconv.weight, mean, std)
 
-class Discriminator(nn.Module):
-    def __init__(self, input_dim, num_filter, output_dim):
-        super(Discriminator, self).__init__()
-
-        self.conv1 = ConvBlock(input_dim, num_filter, activation=False, batch_norm=False)
-        self.conv2 = ConvBlock(num_filter, num_filter * 2)
-        self.conv3 = ConvBlock(num_filter * 2, num_filter * 4)
-        self.conv4 = ConvBlock(num_filter * 4, num_filter * 8, stride=1)
-        self.conv5 = ConvBlock(num_filter * 8, output_dim, stride=1, batch_norm=False)
-
-    def forward(self, input_tensor, target_tensor):
-        x = torch.cat([input_tensor, target_tensor], 1)
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        x = self.conv5(x)
-        out = nn.Sigmoid()(x)
-        return out
-
-    def normal_weight_init(self, mean=0.0, std=0.02):
-        for m in self.children():
-            if isinstance(m, ConvBlock):
-                nn.init.normal(m.conv.weight, mean, std)
-
-class Classifier(nn.Module):
-    def __init__(self, kernel_size: int,
-                 padding: int):
-        super(Classifier, self).__init__()
-
-        self.input_layer = nn.AvgPool2d(kernel_size=kernel_size,padding=padding)
-
-    def forward(self, batch: Tensor):
-
-        # sum loss across all channels
-        output = torch.sum(batch,dim=1)
-        
-        # apply pooling
-        output = self.input_layer(output)
-
-        # extract the maximum value
-        score, _ = torch.max(output.view(output.size(0), -1), dim=1)
-
-        return score
-
 class anomaleafModel(nn.Module):
     """AnomaLEAF Model
     
     Args:
-        batch_size (int): Batch size
         input_size (tuple[int, int]): Input dimension.
-        n_features (int): Number of features layers in the CNNs.
-        latent_vec_size (int): Size of autoencoder latent vector.
-        extra_layers (int, optional): Number of extra layers for encoder/decoder. Defaults to 0.
-        add_final_conv_layer (bool, optional): Add convolution layer at the end. Defaults to True.
-        k (int, optional): Tile size
+        n_features (int): Number of features extracted at each CNN layer.
+        anomaly_score_func (func): calculates anomaly score.
+        num_input_channels (int): number of input features. For images it is equal to the number of channels
+        k_values (int, optional): Tile size.
+        blackout (bool, optional): specifies the type of inpainting (colour or blackout)
     """
     def __init__(self,
-        batch_size: int,
         input_size: tuple[int, int],
         n_features: int,
+        anomaly_score_func,
         num_input_channels=3,
-        anomaly_size: int = 4,
-        k: int = 16,
-        threshold: float = float('-inf')
+        k_values: List[int] = [2,4,8,16],
+        blackout: bool = False,
     )-> None:
         super().__init__()
-        self.generator: Generator = Generator(
+        self.generator: UNet = UNet(
             input_dim=num_input_channels,
             num_filter=n_features, 
             output_dim=num_input_channels
         )
         self.generator.normal_weight_init()
 
-        self.discriminator: Discriminator = Discriminator(
-            input_dim=num_input_channels*2,
-            num_filter=n_features,
-            output_dim=1
-        )
-        self.discriminator.normal_weight_init()
+        self.anomaly_score = anomaly_score_func
 
-        self.classifier: Classifier = Classifier(
-            kernel_size=anomaly_size,
-            padding=0
-        )
+        # Mask information
+        self.k_values = k_values
+        self.image_size = input_size[0]
+        self.blackout = blackout
 
-        self.mask_gen = generate_masks(k_list=[k], n=batch_size, im_size=input_size[0], num_channels=num_input_channels)
+    def generate_inputs(self, original, masks, blackout=False):
 
-        self.threshold = threshold
+        if blackout:
+            inputs =  [original * mask.clone().detach().requires_grad_(False) for mask in masks]
+        # image inpainting
+        else :
+            grayscale = torch.mean((original.clone()), dim=1, keepdim=True)
+            grayscale = grayscale.expand(-1,3,-1,-1)
+            inputs =  [original * mask.clone().detach().requires_grad_(False) + grayscale * (1-mask.clone().detach().requires_grad_(False)) for mask in masks]
+        return inputs
 
-    def mask_input(self, batch: Tensor) -> Tensor:
-        # create masks
-        mask = next(self.mask_gen)
-        assert mask[0].max() == 1, f"No input was masked ({mask[0].min()},{mask[0].max()})"
-        mask = mask.to(batch.device)
-        mask = mask[:batch.shape[0]]
-        assert mask.device == batch.device, f"Different devices: masks ({mask.device} batch ({batch.device}))"
-
-        # grayscale
-        grayscale = torch.mean(batch, dim=1, keepdim=True) # grayscale copy of batch
-        grayscale = grayscale.repeat(1,3,1,1) # cast to three dimensions
-
-        # created reduce image
-        replace_mask = mask.eq(0)
-        copy = batch.clone()
-        assert grayscale.device == copy.device, f"Different devices: grayscale ({grayscale.device}) copy ({copy.device})"
-        assert grayscale.size() == copy.size(), f"grayscale shape ({grayscale.size()}) does not match original shape ({copy.size()})"
-        mask_A_batch = torch.where(replace_mask, grayscale, copy)
-        assert mask_A_batch.size() == copy.size(), f"mask shape ({mask_A_batch.size()}) does not match original shape ({copy.size()})"
-
-        replace_mask_inv = mask.eq(1)
-        copy = batch.clone()
-        assert grayscale.size() == copy.size(), f"grayscale shape ({grayscale.size()}) does not match original shape ({copy.size()})"
-        mask_B_batch = torch.where(replace_mask_inv, grayscale, copy)
-        assert mask_B_batch.size() == copy.size(), f"mask shape ({mask_B_batch.size()}) does not match original shape ({copy.size()})"
-
-        return mask_A_batch, mask_B_batch, mask, grayscale
 
     def forward(self, batch: Tensor):
         """Get scores for batch
@@ -232,31 +166,47 @@ class anomaleafModel(nn.Module):
         """
         padded = pad_nextpow2(batch)
 
-         # create masks
-        mask_A, mask_B, mask, grayscale = self.mask_input(padded)
-
-        # regenerate from masks
-        fake_A = self.generator(mask_A)
-        fake_B = self.generator(mask_B)
-
-        # reconstruct image
-        fake = fake_A.clone()
-        replace_mask = mask.eq(0)
-        fake = torch.where(replace_mask, fake_A, fake_B)
-
-        # when training we will evaluate only on one mask
+        # create masks
         if self.training:
-            return {"real": padded, "input": grayscale, "fake": fake}
-        # when predicting, we will regenerate the whole image
-        else:
-            assert fake.size() == batch.size(), f"generated image ({fake.size()}) does not match original image ({batch.size()})"
-            
-            # score
-            heatmap = torch.abs(fake - padded)
-            heatmap = torch.sum(heatmap, dim=1, keepdim=True)
-            score = self.classifier(heatmap)
-            assert score.size()[0] == heatmap.size()[0], f"Score ({score.size()[0]}) does not match expected batch size ({heatmap.size()[0]})"
-            label = self.threshold < score
+            k_list = random.sample(self.k_values, 1)
+            mask_generator = generate_masks(k_list=k_list,n= 3, im_size = self.image_size)
+            masks = next(mask_generator)
+            masks = masks.to(device)
 
-            return {"real": padded, "fake": fake, "pred_score": score, "pred_label": label}
-      
+            inputs = self.generate_inputs(padded, masks, self.blackout)
+
+            outputs = [self.generator(x) for x in inputs]
+            output = sum(map(lambda x, y: x * (1 - y.clone().detach().requires_grad_(False)), outputs, masks))
+
+            return {"real": padded, "fake": output}
+        else :
+            score = 0
+            for k in self.k_values:
+                mask_generator = generate_masks(k_list=[k],n= 3, im_size = self.image_size)
+                masks = next(mask_generator)
+                masks = masks.to(device)
+
+                inputs = self.generate_inputs(padded, masks, self.blackout)
+                
+                img_size = padded.size(-1)
+                N = img_size // k
+
+                inputs = [padded * mask.clone().detach().requires_grad_(False) for mask in masks]
+                outputs = [self.generator(x) for x in inputs]
+                output = sum(map(lambda x, y: x * (1 - y.clone().detach().requires_grad_(False)), outputs, masks))
+
+                score += self.anomaly_score(padded, output) / (N**2)
+
+            score = score.detach().squeeze().cpu().numpy()
+            for i in range(score.shape[0]):
+                score[i] = gaussian_filter(score[i], sigma=7)
+            real = padded
+            fake = output
+            # fake = output.cpu.numpy()
+            # real = output.cpu.numpy()
+
+            return {"real": real, "fake": fake, "score": score}
+
+
+        
+        
