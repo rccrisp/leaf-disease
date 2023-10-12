@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 import logging
 import matplotlib.pyplot as plt
+from typing import List
 
 import torch.nn as nn
 import torch
@@ -37,11 +38,12 @@ class anomaLEAF(pl.LightningModule):
         input_size: tuple[int, int],
         n_features: int,
         blackout: bool = False,
+        k_values: List[int] = [2,4,8,16],
         num_input_channels=3,
         gamma: int = 1,
         alpha: int = 1,
         tau: int = 1,
-        lr: float = 0.0002,
+        lr: float = 0.0001,
         beta1: float = 0.5,
         beta2: float = 0.999,
         save_examples_every_n_epochs: int = 10,
@@ -53,6 +55,7 @@ class anomaLEAF(pl.LightningModule):
         self.model: anomaleafModel = anomaleafModel(
             input_size=input_size,
             n_features=n_features,
+            k_values=k_values,
             anomaly_score_func=MSGMS_Score(),
             num_input_channels=num_input_channels,
             blackout=blackout
