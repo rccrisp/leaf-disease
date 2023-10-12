@@ -196,7 +196,6 @@ class anomaleafModel(nn.Module):
                 img_size = padded.size(-1)
                 N = img_size // k
 
-                inputs = [padded * mask.clone().detach().requires_grad_(False) for mask in masks]
                 outputs = [self.generator(x) for x in inputs]
                 output = sum(map(lambda x, y: x * (1 - y.clone().detach().requires_grad_(False))*leaf_segment, outputs, masks))
                 # output = output * leaf_segment
