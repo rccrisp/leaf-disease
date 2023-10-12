@@ -114,8 +114,8 @@ class anomaLEAF(pl.LightningModule):
         # Optimize Discriminator #
         ##########################
         output = self.model(batch["image"])
-        pred_real = self.model.discriminator(input_tensor=output["input"], target_tensor=output["real"])
-        pred_fake = self.model.discriminator(input_tensor=output["input"], target_tensor=output["fake"])
+        pred_real = self.model.discriminator(input_tensor=output["real"], target_tensor=output["real"])
+        pred_fake = self.model.discriminator(input_tensor=output["real"], target_tensor=output["fake"])
 
         # loss
         disc_loss = self.discriminator_loss(pred_real, pred_fake)
@@ -129,7 +129,7 @@ class anomaLEAF(pl.LightningModule):
         # Optimize Generator #
         ######################
         output = self.model(batch["image"])
-        pred_fake = self.model.discriminator(input_tensor=output["input"], target_tensor=output["fake"])
+        pred_fake = self.model.discriminator(input_tensor=output["real"], target_tensor=output["fake"])
         # loss
         gen_loss = self.generator_loss(patch_map=pred_fake, real=output["real"], fake=output["fake"])
 
@@ -183,8 +183,8 @@ class anomaLEAF(pl.LightningModule):
         # Evaluate Discriminator #
         ##########################
         # mask
-        pred_real = self.model.discriminator(input_tensor=grayscale, target_tensor=padded)
-        pred_fake = self.model.discriminator(input_tensor=grayscale, target_tensor=fake)
+        pred_real = self.model.discriminator(input_tensor=padded, target_tensor=padded)
+        pred_fake = self.model.discriminator(input_tensor=padded, target_tensor=fake)
 
         # loss
         disc_loss = self.discriminator_loss(pred_real, pred_fake)
