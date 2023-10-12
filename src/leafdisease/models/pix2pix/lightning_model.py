@@ -166,13 +166,16 @@ class anomaLEAF(pl.LightningModule):
 
         # model output
         padded = pad_nextpow2(batch["image"])
+        leaf_segment = (padded != 0).float()
 
         # create masks
         mask_A, mask_B, mask, grayscale = self.model.mask_input(padded)
 
         # regenerate from masks
         fake_A = self.model.generator(mask_A)
+        fake_A = fake_A * leaf_segment
         fake_B = self.model.generator(mask_B)
+        fake_B = fake_B * leaf_segment
 
         # reconstruct image
         fake = fake_A.clone()
@@ -183,8 +186,8 @@ class anomaLEAF(pl.LightningModule):
         # Evaluate Discriminator #
         ##########################
         # mask
-        pred_real = self.model.discriminator(input_tensor=padded, target_tensor=padded)
-        pred_fake = self.model.discriminator(input_tensor=padded, target_tensor=fake)
+        pred_real = self.model.discriminator(input_tensor=grayscale, target_tensor=padded)
+        pred_fake = self.model.discriminator(input_tensor=grayscale, target_tensor=fake)
 
         # loss
         disc_loss = self.discriminator_loss(pred_real, pred_fake)

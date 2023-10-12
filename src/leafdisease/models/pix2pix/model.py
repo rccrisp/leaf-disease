@@ -232,6 +232,8 @@ class anomaleafModel(nn.Module):
         """
         padded = pad_nextpow2(batch)
 
+        leaf_segment = (padded != 0).float()
+
          # create masks
         mask_A, mask_B, mask, grayscale = self.mask_input(padded)
 
@@ -246,6 +248,7 @@ class anomaleafModel(nn.Module):
 
         # when training we will evaluate only on one mask
         if self.training:
+            fake = fake * leaf_segment
             return {"real": padded, "input": grayscale, "fake": fake}
         # when predicting, we will regenerate the whole image
         else:
@@ -257,6 +260,8 @@ class anomaleafModel(nn.Module):
             score = self.classifier(heatmap)
             assert score.size()[0] == heatmap.size()[0], f"Score ({score.size()[0]}) does not match expected batch size ({heatmap.size()[0]})"
             label = self.threshold < score
+            
+            fake = fake * leaf_segment
 
             return {"real": padded, "fake": fake, "pred_score": score, "pred_label": label}
       

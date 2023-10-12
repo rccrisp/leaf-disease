@@ -331,11 +331,15 @@ class ganomalyModel(nn.Module):
     def forward(self, batch):
         padded_batch = pad_nextpow2(batch)
 
+        leaf_segment = (padded_batch != 0).float()
+
         fake, latent_i, latent_o = self.generator(padded_batch)
 
         if self.training:
+            fake = fake * leaf_segment
             return {"real": padded_batch, "fake": fake, "latent_i": latent_i, "latent_o": latent_o}
         else:
+            fake = fake * leaf_segment
             score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
             label = self.threshold < score
             return {"real": padded_batch, "fake": fake, "pred_score": score, "pred_label": label}
