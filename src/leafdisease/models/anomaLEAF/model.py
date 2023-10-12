@@ -180,10 +180,10 @@ class anomaleafModel(nn.Module):
             inputs = self.generate_inputs(padded, masks, self.blackout)
 
             outputs = [self.generator(x) for x in inputs]
-            output = sum(map(lambda x, y: x * (1 - y.clone().detach().requires_grad_(False)), outputs, masks))
-            output = output * leaf_segment
+            output = sum(map(lambda x, y: x * (1 - y.clone().detach().requires_grad_(False))*leaf_segment, outputs, masks))
+            # output = output * leaf_segment
 
-            return {"real": padded, "fake": output, "inputs": inputs}
+            return {"real": padded, "fake": output}
         else :
             score = 0
             for k in self.k_values:
@@ -198,8 +198,8 @@ class anomaleafModel(nn.Module):
 
                 inputs = [padded * mask.clone().detach().requires_grad_(False) for mask in masks]
                 outputs = [self.generator(x) for x in inputs]
-                output = sum(map(lambda x, y: x * (1 - y.clone().detach().requires_grad_(False)), outputs, masks))
-                output = output * leaf_segment
+                output = sum(map(lambda x, y: x * (1 - y.clone().detach().requires_grad_(False))*leaf_segment, outputs, masks))
+                # output = output * leaf_segment
 
                 score += self.anomaly_score(padded, output) / (N**2)
 

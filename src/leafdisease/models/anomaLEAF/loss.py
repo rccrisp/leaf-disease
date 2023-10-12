@@ -75,7 +75,7 @@ class Prewitt(nn.Module):
         x = self.filter(img)
         x = torch.mul(x, x)
         x = torch.sum(x, dim=1, keepdim=True)
-        x = torch.sqrt(x)
+        x = torch.sqrt(x+1e-6)
         return x
 
 
