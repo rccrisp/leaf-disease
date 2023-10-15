@@ -122,7 +122,6 @@ class anomaLEAF(pl.LightningModule):
         # loss
         color_dist = self.deltaE_loss_func(real, fake)
         l1_loss = np.mean(color_dist)
-        print(color_dist.max())
         gms_loss = self.msgms_loss_func(real, fake)
         ssim_loss = self.ssim_loss_func(real, fake)
 
