@@ -34,7 +34,7 @@ class CIEDE2000_Loss(nn.Module):
 
         delE = deltaE_ciede2000(img1_lab.permute(0,2,3,1).cpu().detach().numpy(), img2_lab.permute(0,2,3,1).cpu().detach().numpy())
 
-        return delE
+        return delE/100
 
 
 def _ssim(img1, img2, window, window_size, channel, size_average=True):
