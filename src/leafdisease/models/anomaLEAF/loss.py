@@ -1,6 +1,6 @@
-
-
+from skimage.color import deltaE_ciede2000
 import torch
+from torch import Tensor
 import torch.nn.functional as F
 import torch.nn as nn
 from math import exp
@@ -21,6 +21,20 @@ def create_window(window_size, channel):
     _2D_window = _1D_window.mm(_1D_window.t()).float().unsqueeze(0).unsqueeze(0)
     window = _2D_window.expand(channel, 1, window_size, window_size).contiguous()
     return window
+
+class CIEDE2000_Loss(nn.Module):
+    def __init__(self):
+        super().__init__()
+    
+    def forward(self, img1: Tensor, img2: Tensor):
+
+        # convert to L*A*B
+        img1_lab = kornia.color.rgb_to_lab(img1)
+        img2_lab = kornia.color.rgb_to_lab(img2)
+
+        delE = deltaE_ciede2000(img1_lab.permute(0,2,3,1).detach().numpy(), img2_lab.permute(0,2,3,1).detach().numpy())
+
+        return delE
 
 
 def _ssim(img1, img2, window, window_size, channel, size_average=True):

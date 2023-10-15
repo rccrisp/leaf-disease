@@ -207,6 +207,7 @@ class anomaleafModel(nn.Module):
                 score[i] = gaussian_filter(score[i], sigma=7)
             real = padded
             fake = output
+            
             # fake = output.cpu.numpy()
             # real = output.cpu.numpy()
 

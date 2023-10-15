@@ -8,6 +8,7 @@ import os
 import logging
 import matplotlib.pyplot as plt
 from typing import List
+import numpy as np
 
 import torch.nn as nn
 import torch
@@ -15,7 +16,7 @@ import pytorch_lightning as pl
 from torch import Tensor, optim
 import torchvision
 
-from .loss import SSIM_Loss, MSGMS_Loss, MSGMS_Score
+from .loss import SSIM_Loss, MSGMS_Loss, MSGMS_Score, CIEDE2000_Loss
 from .model import anomaleafModel
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,7 @@ class anomaLEAF(pl.LightningModule):
         self.l2_loss_func = nn.MSELoss(reduction="mean")
         self.ssim_loss_func = SSIM_Loss()
         self.msgms_loss_func = MSGMS_Loss()
+        self.deltaE_loss_func = CIEDE2000_Loss()
 
         # Loss parameters
         self.epsilon = epsilon
@@ -118,19 +120,18 @@ class anomaLEAF(pl.LightningModule):
         fake = output["fake"]
 
         # loss
-        l1_loss = torch.abs(real- fake)
-        max_l1_loss, _ = torch.max(l1_loss.view(l1_loss.size(0), -1), dim=1)
-        max_l1_loss = torch.max(max_l1_loss)
-        l2_loss = self.l2_loss_func(real, fake)
+        color_dist = self.deltaE_loss_func(real, fake)
+        l1_loss = np.mean(color_dist)
+        print(color_dist.max())
         gms_loss = self.msgms_loss_func(real, fake)
         ssim_loss = self.ssim_loss_func(real, fake)
 
-        loss = self.gamma * l2_loss + self.alpha * gms_loss + self.tau * ssim_loss + self.epsilon*max_l1_loss
+        loss = self.gamma * l1_loss + self.alpha * gms_loss + self.tau * ssim_loss + self.epsilon*color_dist.max()
 
         # Log
         self.log("train_loss", loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        self.log("train_l1_loss", max_l1_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        self.log("train_l2_loss", l2_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("train_max_l1_loss", color_dist.max(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("train_l1_loss", l1_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("train_gms_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("train_ssim_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         
@@ -152,19 +153,17 @@ class anomaLEAF(pl.LightningModule):
         fake = output["fake"]
 
         # loss
-        l1_loss = torch.abs(real- fake)
-        max_l1_loss, _ = torch.max(l1_loss.view(l1_loss.size(0), -1), dim=1)
-        max_l1_loss = torch.max(max_l1_loss)
-        l2_loss = self.l2_loss_func(real, fake)
+        color_dist = self.deltaE_loss_func(real, fake)
+        l1_loss = np.mean(color_dist)
         gms_loss = self.msgms_loss_func(real, fake)
         ssim_loss = self.ssim_loss_func(real, fake)
 
-        loss = self.gamma * l2_loss + self.alpha * gms_loss + self.tau * ssim_loss + self.epsilon*max_l1_loss
+        loss = self.gamma * l1_loss + self.alpha * gms_loss + self.tau * ssim_loss + self.epsilon*color_dist.max()
 
         # Log
         self.log("val_loss", loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        self.log("val_l1_loss", max_l1_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        self.log("val_l2_loss", l2_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("val_max_l1_loss", color_dist.max(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("val_l1_loss", l1_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("val_gms_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("val_ssim_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         
