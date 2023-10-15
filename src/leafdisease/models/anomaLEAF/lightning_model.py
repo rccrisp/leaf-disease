@@ -43,6 +43,7 @@ class anomaLEAF(pl.LightningModule):
         gamma: int = 1,
         alpha: int = 1,
         tau: int = 1,
+        epsilon: int = 1,
         lr: float = 0.0001,
         beta1: float = 0.5,
         beta2: float = 0.999,
@@ -67,6 +68,7 @@ class anomaLEAF(pl.LightningModule):
         self.msgms_loss_func = MSGMS_Loss()
 
         # Loss parameters
+        self.epsilon = epsilon
         self.gamma = gamma
         self.alpha = alpha
         self.tau = tau
@@ -116,14 +118,18 @@ class anomaLEAF(pl.LightningModule):
         fake = output["fake"]
 
         # loss
+        l1_loss = torch.abs(real- fake)
+        max_l1_loss, _ = torch.max(l1_loss.view(l1_loss.size(0), -1), dim=1)
+        max_l1_loss = torch.max(max_l1_loss)
         l2_loss = self.l2_loss_func(real, fake)
         gms_loss = self.msgms_loss_func(real, fake)
         ssim_loss = self.ssim_loss_func(real, fake)
 
-        loss = self.gamma * l2_loss + self.alpha * gms_loss + self.tau * ssim_loss
+        loss = self.gamma * l2_loss + self.alpha * gms_loss + self.tau * ssim_loss + self.epsilon*max_l1_loss
 
         # Log
         self.log("train_loss", loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("train_l1_loss", max_l1_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("train_l2_loss", l2_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("train_gms_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("train_ssim_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
@@ -146,14 +152,18 @@ class anomaLEAF(pl.LightningModule):
         fake = output["fake"]
 
         # loss
+        l1_loss = torch.abs(real- fake)
+        max_l1_loss, _ = torch.max(l1_loss.view(l1_loss.size(0), -1), dim=1)
+        max_l1_loss = torch.max(max_l1_loss)
         l2_loss = self.l2_loss_func(real, fake)
         gms_loss = self.msgms_loss_func(real, fake)
         ssim_loss = self.ssim_loss_func(real, fake)
 
-        loss = self.gamma * l2_loss + self.alpha * gms_loss + self.tau * ssim_loss
+        loss = self.gamma * l2_loss + self.alpha * gms_loss + self.tau * ssim_loss + self.epsilon*max_l1_loss
 
         # Log
         self.log("val_loss", loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("val_l1_loss", max_l1_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("val_l2_loss", l2_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("val_gms_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("val_ssim_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
