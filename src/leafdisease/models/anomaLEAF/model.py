@@ -53,7 +53,7 @@ class anomaleafModel(nn.Module):
         input = input.to(device)
 
         # remove background
-        foreground_mask = (torch.mean((input['image']+1)/2, dim=1) >= 0.05).float()
+        foreground_mask = ((input+1)/2 != 0).float()
 
         anomaly_map = 0
         # calculate anomaly score
