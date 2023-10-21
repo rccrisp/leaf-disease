@@ -53,8 +53,8 @@ class anomaleafModel(nn.Module):
         input = input.to(device)
 
         # remove background
-        foreground_mask = ((input+1)/2 != 0).float()
-
+        foreground_mask =  ((input+1)/2 != 0).all(dim=0).float()
+       
         anomaly_map = 0
         # calculate anomaly score
         for k in self.k_list:
