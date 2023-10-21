@@ -1,7 +1,64 @@
 import math
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch import Tensor, nn
+from typing import Tuple, List
+
+use_cuda = torch.cuda.is_available()
+device = torch.device('cuda' if use_cuda else 'cpu')
+
+class PatchMask(nn.Module):
+
+    def __init__(self,
+        num_disjoint_sets,
+        img_size: Tuple[int, int],
+        num_channels=3
+    )-> None:
+        super().__init__()
+
+        self.num_disjoint_sets = num_disjoint_sets
+        self.img_h, self.img_w = img_size
+        self.num_channels = num_channels
+
+    def forward(self, patch_size):
+
+        grid_h = math.ceil(self.img_h / patch_size)
+        grid_w = math.ceil(self.img_w / patch_size)
+        num_grids = grid_h * grid_w
+        disjoint_masks = []
+
+        for grid_idx in np.array_split(np.random.permutation(num_grids), self.num_disjoint_sets):
+            flatten_mask = np.ones(num_grids)
+            flatten_mask[grid_idx] = 0
+            mask = flatten_mask.reshape((grid_h, grid_w))
+            mask = mask.repeat(patch_size, axis=0).repeat(patch_size, axis=1)   # for all 3 channels
+            mask = torch.tensor(mask, requires_grad=False, dtype=torch.float)
+            mask = mask.to(device)
+            disjoint_masks.append(mask)
+
+        return disjoint_masks
+
+class PatchedInputs(nn.Module):
+
+    def __init__(self,
+        blackout: bool
+    )-> None:
+        super().__init__()
+
+        self.blackout = blackout
+
+    def forward(self, input: Tensor, masks: List[Tensor]):
+        inverse_masks = [1-mask for mask in masks]
+        if self.blackout:
+            patched_inputs = [input * mask for mask in masks]
+        else:
+            grayscale = torch.mean(input.clone(), dim=1, keepdim=True)
+            grayscale = grayscale.expand(-1, 3, -1, -1)
+            patched_inputs = [input * mask + grayscale * inv_mask for mask, inv_mask in zip(masks, inverse_masks)]
+
+        return patched_inputs, inverse_masks
+        
 
 def pad_nextpow2(batch: Tensor) -> Tensor:
     """Compute required padding from input size and return padded images.
@@ -22,37 +79,8 @@ def pad_nextpow2(batch: Tensor) -> Tensor:
     padded_batch = nn.functional.pad(batch, pad=[*padding_h, *padding_w])
     return padded_batch
 
-def generate_masks(k_list, n, im_size, num_channels=3):
-    """Generates random tile masks for images
+def mean_smoothing(amaps: Tensor, kernel_size: int = 21) -> Tensor:
 
-    Args:
-        k_list (int): size of tiles
-        n (int): number of permutations to generate at each tile size
-        im_size (int): image dimensions (assumes square)
-        num_channels (int): number of channels for mask
-
-    Returns:
-        A list of masks
-
-    Adapated from code at https://github.com/plutoyuxie/Reconstruction-by-inpainting-for-visual-anomaly-detection/blob/main/utils/__init__.py
-    
-    """
-
-    while True:
-        Ms = []
-        for k in k_list:
-            N = im_size // k
-            rdn = np.random.permutation(N**2)
-            additive = N**2 % n
-            if additive > 0:
-                rdn = np.concatenate((rdn, np.asarray([-1] * (n - additive))))
-            n_index = rdn.reshape(n, -1)
-            for index in n_index:
-                tmp = [0 if i in index else 1 for i in range(N**2)]
-                tmp = np.asarray(tmp).reshape(N, N)
-                tmp = tmp.repeat(k, 0).repeat(k, 1)
-                # Create a 3D mask with 'num_channels' channels
-                mask_3d = np.stack([tmp] * num_channels, axis=0)
-                mask_tensor = torch.from_numpy(mask_3d).float()
-                Ms.append(mask_tensor)
-        yield torch.stack(Ms, dim=0)
+    mean_kernel = torch.ones(1, 1, kernel_size, kernel_size) / kernel_size ** 2
+    mean_kernel = mean_kernel.to(amaps.device)
+    return F.conv2d(amaps, mean_kernel, padding=kernel_size // 2, groups=1)

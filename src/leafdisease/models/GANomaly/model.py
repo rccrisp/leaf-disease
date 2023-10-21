@@ -272,7 +272,7 @@ class Decoder(nn.Module):
         return output
 
 class ganomalyModel(nn.Module):
-    """AnomaLEAF Model
+    """GANomaly Model
     
     Args:
         batch_size (int): Batch size

@@ -6,9 +6,8 @@ from __future__ import annotations
 
 import os
 import logging
-import matplotlib.pyplot as plt
 from typing import List
-import numpy as np
+import random
 
 import torch.nn as nn
 import torch
@@ -16,8 +15,10 @@ import pytorch_lightning as pl
 from torch import Tensor, optim
 import torchvision
 
-from .loss import SSIM_Loss, MSGMS_Loss, MSGMS_Score, CIEDE2000_Loss
-from .model import anomaleafModel
+from leafdisease.components.unet import UNet
+from leafdisease.criterions.msgms import MSGMSLoss
+from leafdisease.criterions.ssim import SSIMLoss
+from leafdisease.utils.image import PatchMask, PatchedInputs, pad_nextpow2, mean_smoothing
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +38,10 @@ class anomaLEAF(pl.LightningModule):
     def __init__(
         self,
         input_size: tuple[int, int],
-        n_features: int,
         blackout: bool = False,
         k_values: List[int] = [2,4,8,16],
         num_input_channels=3,
+        num_disjoint_sets=3,
         gamma: int = 1,
         alpha: int = 1,
         tau: int = 1,
@@ -54,27 +55,26 @@ class anomaLEAF(pl.LightningModule):
     ) -> None:
         super().__init__()
 
-        self.model: anomaleafModel = anomaleafModel(
-            input_size=input_size,
-            n_features=n_features,
-            k_values=k_values,
-            anomaly_score_func=MSGMS_Score(),
-            num_input_channels=num_input_channels,
-            blackout=blackout
+        self.model = UNet(
+            n_channels=num_input_channels
         )
 
+        # function for generating masks
+        self.k_list = k_values
+        self.mask_gen = PatchMask(num_disjoint_sets, img_size = input_size, num_channels=3)
+        self.input_gen = PatchedInputs(blackout=blackout)
+
         # Loss functions
+        # self.l1_loss_func = nn.L1Loss(reduction="mean")
         self.l2_loss_func = nn.MSELoss(reduction="mean")
-        self.ssim_loss_func = SSIM_Loss()
-        self.msgms_loss_func = MSGMS_Loss()
-        self.deltaE_loss_func = CIEDE2000_Loss()
+        self.ssim_loss_func = SSIMLoss()
+        self.msgms_loss_func = MSGMSLoss()
 
         # Loss parameters
         self.epsilon = epsilon
         self.gamma = gamma
         self.alpha = alpha
         self.tau = tau
-
 
         self.learning_rate = lr
         self.beta1 = beta1
@@ -92,14 +92,13 @@ class anomaLEAF(pl.LightningModule):
             Optimizer: Adam optimizer for autoencoder
         """
         optimizer = optim.Adam(
-            self.model.generator.parameters(),
+            self.model.parameters(),
             lr=self.learning_rate,
             betas=(self.beta1, self.beta2),
         )
 
         return optimizer
     
-
     def training_step(
         self, batch: dict[str, str | Tensor], batch_idx: int
     ) :
@@ -114,25 +113,33 @@ class anomaLEAF(pl.LightningModule):
         """
         del batch_idx  # `batch_idx` variables is not used.
 
-        # forward step
-        output = self.model(batch["image"])
-        real = output["real"]
-        fake = output["fake"]
+        # pad image
+        input = pad_nextpow2(batch["image"])
+
+        # remove background
+        foreground_mask = (input != 0).float()
+
+        # generate masks
+        k = random.sample(self.k_list, 1)
+        disjoint_masks = self.mask_gen(k)
+        patched_inputs, inv_masks = self.input_gen(input, disjoint_masks)
+        
+        # model forward pass
+        outputs = [self.model(x) for x in patched_inputs]
+        output = sum(map(lambda x, y: x * y * foreground_mask, outputs, inv_masks)) # recover all reconstructed patches
 
         # loss
-        color_dist = self.deltaE_loss_func(real, fake)
-        l1_loss = np.mean(color_dist)
-        gms_loss = self.msgms_loss_func(real, fake)
-        ssim_loss = self.ssim_loss_func(real, fake)
+        l2_loss = self.l2_loss_func(input, output)
+        gms_loss = self.msgms_loss_func(input, output)
+        ssim_loss = self.ssim_loss_func(input, output)
 
-        loss = self.gamma * l1_loss + self.alpha * gms_loss + self.tau * ssim_loss + self.epsilon*color_dist.max()
+        loss = self.gamma * l2_loss + self.alpha * gms_loss + self.tau * ssim_loss
 
         # Log
         self.log("train_loss", loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        self.log("train_max_l1_loss", color_dist.max(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        self.log("train_l1_loss", l1_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("train_max_l2_loss", l2_loss, on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("train_gms_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        self.log("train_ssim_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("train_ssim_loss", ssim_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         
         return loss
 
@@ -146,32 +153,61 @@ class anomaLEAF(pl.LightningModule):
             (STEP_OUTPUT): Output predictions.
         """
 
-         # forward step
-        output = self.model(batch["image"])
-        real = output["real"]
-        fake = output["fake"]
+        # pad image
+        input = pad_nextpow2(batch["image"])
+
+        # remove background
+        foreground_mask = (input != 0).float()
+
+        # generate masks
+        disjoint_masks = self.mask_gen(self.k_list[0])
+        patched_inputs, inv_masks = self.input_gen(input, disjoint_masks)
+        
+        # model forward pass
+        outputs = [self.model(x) for x in patched_inputs]
+        output = sum(map(lambda x, y: x * y * foreground_mask, outputs, inv_masks)) # recover all reconstructed patches
 
         # loss
-        color_dist = self.deltaE_loss_func(real, fake)
-        l1_loss = np.mean(color_dist)
-        gms_loss = self.msgms_loss_func(real, fake)
-        ssim_loss = self.ssim_loss_func(real, fake)
+        l2_loss = self.l2_loss_func(input, output)
+        gms_loss = self.msgms_loss_func(input, output)
+        ssim_loss = self.ssim_loss_func(input, output)
 
-        loss = self.gamma * l1_loss + self.alpha * gms_loss + self.tau * ssim_loss + self.epsilon*color_dist.max()
+        loss = self.gamma * l2_loss + self.alpha * gms_loss + self.tau * ssim_loss
 
+        # calculate anomaly score
+        for k in self.k_list:
+            # generate masks
+            disjoint_masks = self.mask_gen(self.k_list[0])
+            patched_inputs, inv_masks = self.input_gen(input, disjoint_masks)
+        
+            # model forward pass
+            outputs = [self.model(x) for x in patched_inputs]
+            output = sum(map(lambda x, y: x * y * foreground_mask, outputs, inv_masks)) # recover all reconstructed patches
+        
+            # score for this patch size
+            anomaly_map += self.msgms_loss_func(input, output, as_loss=False)
+        
+        # smooth anomaly map
+        anomaly_map = mean_smoothing(anomaly_map)
+
+        # calculate the maximum heatmap score for each image in the batch
+        max_values, _ = torch.max(anomaly_map, dim=1)
+
+        # Calculate the mean of the maximum values
+        mean_max_value = torch.mean(max_values)
+        
         # Log
         self.log("val_loss", loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        self.log("val_max_l1_loss", color_dist.max(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        self.log("val_l1_loss", l1_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("val_l2_loss", l2_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("val_gms_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        self.log("val_ssim_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("val_ssim_loss", ssim_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("val_anomaly_score", mean_max_value.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         
         return loss
 
-
     def generate_and_save_samples(self, epoch):
         # Generate and save example images
-        self.eval()  # Set the model to evaluation mode to ensure deterministic results
+        self.model.eval()  # Set the model to evaluation mode to ensure deterministic results
         with torch.no_grad():
             # Generate samples from your GAN
             generated_samples = self.model(self.example_images)
@@ -184,7 +220,7 @@ class anomaLEAF(pl.LightningModule):
             save_path = os.path.join(self.save_example_dir, filename)
             torchvision.utils.save_image(grid, save_path)
             
-        self.train()  # Set the model back to training mode 
+        self.model.train()  # Set the model back to training mode 
     
     def on_validation_epoch_end(self):
 
