@@ -121,7 +121,7 @@ class anomaLEAF(pl.LightningModule):
 
         # generate masks
         k = random.sample(self.k_list, 1)
-        disjoint_masks = self.mask_gen(k)
+        disjoint_masks = self.mask_gen(k[0])
         patched_inputs, inv_masks = self.input_gen(input, disjoint_masks)
         
         # model forward pass
@@ -174,10 +174,11 @@ class anomaLEAF(pl.LightningModule):
 
         loss = self.gamma * l2_loss + self.alpha * gms_loss + self.tau * ssim_loss
 
+        anomaly_map = 0
         # calculate anomaly score
         for k in self.k_list:
             # generate masks
-            disjoint_masks = self.mask_gen(self.k_list[0])
+            disjoint_masks = self.mask_gen(k)
             patched_inputs, inv_masks = self.input_gen(input, disjoint_masks)
         
             # model forward pass
@@ -207,21 +208,33 @@ class anomaLEAF(pl.LightningModule):
 
     def generate_and_save_samples(self, epoch):
         # Generate and save example images
-        self.model.eval()  # Set the model to evaluation mode to ensure deterministic results
-        with torch.no_grad():
-            # Generate samples from your GAN
-            generated_samples = self.model(self.example_images)
 
-            # Convert generated samples to a grid for visualization (using torchvision)
+        with torch.no_grad():
+
+            # pad image
+            input = pad_nextpow2(self.example_images)
+
+            # remove background
+            foreground_mask = (input != 0).float()
+
+            # generate masks
+            disjoint_masks = self.mask_gen(self.k_list[0])
+            patched_inputs, inv_masks = self.input_gen(input, disjoint_masks)
+        
+            # model forward pass
+            outputs = [self.model(x) for x in patched_inputs]
+            output = sum(map(lambda x, y: x * y * foreground_mask, outputs, inv_masks))    # recover all reconstructed patches
+
+            # Convert the output to [0, 1] range for the entire batch
+            output = (output + 1) / 2
+
             num_samples = self.example_images.size(0)
-            fake = generated_samples["fake"]
-            grid = torchvision.utils.make_grid(fake, nrow=int(num_samples**0.5))
+
+            grid = torchvision.utils.make_grid(output, nrow=int(num_samples**0.5))
             filename = f"anomaLEAF_fake_epoch={epoch}.png"
             save_path = os.path.join(self.save_example_dir, filename)
             torchvision.utils.save_image(grid, save_path)
             
-        self.model.train()  # Set the model back to training mode 
-    
     def on_validation_epoch_end(self):
 
         # Specify when to generate and save examples (e.g., every n epochs)
