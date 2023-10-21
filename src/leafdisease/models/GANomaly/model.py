@@ -336,10 +336,10 @@ class ganomalyModel(nn.Module):
         fake, latent_i, latent_o = self.generator(input)
 
         if self.training:
-            fake = fake * foreground_mask
+            fake = fake * foreground_mask - (1-foreground_mask)
             return {"real": input, "fake": fake, "latent_i": latent_i, "latent_o": latent_o}
         else:
-            fake = fake * foreground_mask
+            fake = fake * foreground_mask - (1-foreground_mask)
             score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
             label = self.threshold < score
             return {"real": input, "fake": fake, "pred_score": score, "pred_label": label}

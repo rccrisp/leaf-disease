@@ -65,7 +65,7 @@ class anomaleafModel(nn.Module):
             # model forward pass
             with torch.no_grad():
                 outputs = [self.model(x) for x in patched_inputs]
-            output = sum(map(lambda x, y: x * y * foreground_mask, outputs, inv_masks)) # recover all reconstructed patches
+            output = sum(map(lambda x, y: x * y * foreground_mask - (1-foreground_mask), outputs, inv_masks)) # recover all reconstructed patches
 
             if k == self.reconstruction_k:
                 fake = output.clone()

@@ -116,6 +116,8 @@ class anomaLEAF(pl.LightningModule):
         # pad image
         input = pad_nextpow2(batch["image"])
 
+        foreground_mask = ((input+1)/2 != 0).float()
+
         # generate masks
         k = random.sample(self.k_list, 1)
         disjoint_masks = self.mask_gen(k[0])
@@ -123,7 +125,7 @@ class anomaLEAF(pl.LightningModule):
         
         # model forward pass
         outputs = [self.model(x) for x in patched_inputs]
-        output = sum(map(lambda x, y: x * y, outputs, inv_masks)) # recover all reconstructed patches
+        output = sum(map(lambda x, y: x * y * foreground_mask - (1-foreground_mask), outputs, inv_masks)) # recover all reconstructed patches
 
         # loss
         l2_loss = self.l2_loss_func(input, output)
@@ -161,7 +163,7 @@ class anomaLEAF(pl.LightningModule):
         
         # model forward pass
         outputs = [self.model(x) for x in patched_inputs]
-        output = sum(map(lambda x, y: x * y, outputs, inv_masks)) # recover all reconstructed patches
+        output = sum(map(lambda x, y: x * y * foreground_mask - (1-foreground_mask), outputs, inv_masks)) # recover all reconstructed patches
 
         # loss
         l2_loss = self.l2_loss_func(input, output)
@@ -219,7 +221,7 @@ class anomaLEAF(pl.LightningModule):
         
             # model forward pass
             outputs = [self.model(x) for x in patched_inputs]
-            output = sum(map(lambda x, y: x * y * foreground_mask, outputs, inv_masks))    # recover all reconstructed patches
+            output = sum(map(lambda x, y: x * y * foreground_mask - (1-foreground_mask), outputs, inv_masks))    # recover all reconstructed patches
 
             # Convert the output to [0, 1] range for the entire batch
             output = (output + 1) / 2
