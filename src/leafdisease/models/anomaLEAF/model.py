@@ -50,6 +50,7 @@ class anomaleafModel(nn.Module):
 
          # pad image
         input = pad_nextpow2(batch["image"])
+        input = input.to(device)
 
         # remove background
         foreground_mask = (input != 0).float()

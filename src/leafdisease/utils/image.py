@@ -53,13 +53,12 @@ class PatchedInputs(nn.Module):
         if self.blackout:
             patched_inputs = [input * mask for mask in masks]
         else:
-            grayscale = torch.mean(input.clone(), dim=1, keepdim=True)
+            grayscale = torch.mean(input.clone(), dim=1, keepdim=True).to(device)
             grayscale = grayscale.expand(-1, 3, -1, -1)
             patched_inputs = [input * mask + grayscale * inv_mask for mask, inv_mask in zip(masks, inverse_masks)]
 
         return patched_inputs, inverse_masks
         
-
 def pad_nextpow2(batch: Tensor) -> Tensor:
     """Compute required padding from input size and return padded images.
 
