@@ -75,7 +75,7 @@ class anomaleafModel(nn.Module):
         
         # smooth anomaly map
         anomaly_map = mean_smoothing(anomaly_map)
-        anomaly_map = anomaly_map*foreground_mask
+        anomaly_map = anomaly_map
 
         # calculate the maximum heatmap score for each image in the batch
         max_values, _ = torch.max(anomaly_map, dim=1)
