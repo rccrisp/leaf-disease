@@ -153,6 +153,8 @@ class anomaLEAF(pl.LightningModule):
         # pad image
         input = pad_nextpow2(batch["image"])
 
+        foreground_mask = ((input+1)/2 != 0).float()
+
         # generate masks
         disjoint_masks = self.mask_gen(self.k_list[0])
         patched_inputs, inv_masks = self.input_gen(input, disjoint_masks)
