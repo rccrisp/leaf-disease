@@ -137,7 +137,7 @@ class anomaLEAF(pl.LightningModule):
 
         # Log
         self.log("train_loss", loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
-        self.log("train_max_l2_loss", l2_loss, on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("train_l2_loss", l2_loss, on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("train_gms_loss", gms_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         self.log("train_ssim_loss", ssim_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
         
