@@ -171,7 +171,7 @@ class Ganomaly(pl.LightningModule):
 
         real = pad_nextpow2(batch["image"])
         fake, latent_i, latent_o = self.model.generator(real)
-        leaf_segment = ((real+1)/2 != 0.05).float()
+        leaf_segment = ((real+1)/2 != 0).float()
         fake = fake * leaf_segment
 
         ######################
