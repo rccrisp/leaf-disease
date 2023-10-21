@@ -261,7 +261,7 @@ class Decoder(nn.Module):
                 bias=False,
             ),
         )
-        self.final_layers.add_module(f"final-{num_input_channels}-sigmoid", nn.Sigmoid())
+        self.final_layers.add_module(f"final-{num_input_channels}-tanh", nn.Tanh())
 
     def forward(self, input_tensor: Tensor) -> Tensor:
         """Return generated image."""

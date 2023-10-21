@@ -202,19 +202,20 @@ class Ganomaly(pl.LightningModule):
 
     def generate_and_save_samples(self, epoch):
         # Generate and save example images
-        self.eval()  # Set the model to evaluation mode to ensure deterministic results
+        self.model.eval()  # Set the model to evaluation mode to ensure deterministic results
         with torch.no_grad():
             # Generate samples from your GAN
             output = self.model(self.example_images)
 
             # Convert generated samples to a grid for visualization (using torchvision)
+            output = (output + 1) / 2
             num_samples = self.example_images.size(0)
             grid = torchvision.utils.make_grid(output["fake"], nrow=int(num_samples**0.5))
             filename = f"GANomaly_fake_epoch={epoch}.png"
             save_path = os.path.join(self.save_example_dir, filename)
             torchvision.utils.save_image(grid, save_path)
             
-        self.train()  # Set the model back to training mode 
+        self.model.train()  # Set the model back to training mode 
     
     def on_validation_epoch_end(self):
 
