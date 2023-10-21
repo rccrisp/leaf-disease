@@ -117,7 +117,7 @@ class anomaLEAF(pl.LightningModule):
         input = pad_nextpow2(batch["image"])
 
         # remove background
-        foreground_mask = ((input+1)/2 != 0).float()
+        foreground_mask = ((input+1)/2 != 0.05).float()
 
         # generate masks
         k = random.sample(self.k_list, 1)
@@ -157,7 +157,7 @@ class anomaLEAF(pl.LightningModule):
         input = pad_nextpow2(batch["image"])
 
         # remove background
-        foreground_mask = ((input+1)/2 != 0).float()
+        foreground_mask = ((input+1)/2 != 0.05).float()
 
         # generate masks
         disjoint_masks = self.mask_gen(self.k_list[0])
@@ -215,7 +215,7 @@ class anomaLEAF(pl.LightningModule):
             input = pad_nextpow2(self.example_images)
 
             # remove background
-            foreground_mask = ((input+1)/2 != 0).float()
+            foreground_mask = ((input+1)/2 != 0.05).float()
 
             # generate masks
             disjoint_masks = self.mask_gen(self.k_list[0])
