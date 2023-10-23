@@ -170,7 +170,6 @@ class Encoder(nn.Module):
             self.pyramid_features.add_module(f"pyramid-{out_features}-relu", nn.LeakyReLU(0.2, inplace=True))
             n_features = out_features
 
-        print(f"encode {out_features}")
         # Final conv
         if add_final_conv_layer:
             self.final_conv_layer = nn.Conv2d(
