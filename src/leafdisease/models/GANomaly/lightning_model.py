@@ -17,7 +17,7 @@ import torchvision
 import os
 
 from leafdisease.utils.image import pad_nextpow2
-from .model import ganomalyModel
+from leafdisease.components.GAN import Generator, Discriminator
 from .loss import GeneratorLoss, DiscriminatorLoss
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,7 @@ class Ganomaly(pl.LightningModule):
         input_size: tuple[int, int],
         n_features: int,
         latent_vec_size: int,
+        depth: int = 4,
         num_input_channels=3,
         extra_layers: int = 0,
         add_final_conv_layer: bool = True,
@@ -56,16 +57,29 @@ class Ganomaly(pl.LightningModule):
     ) -> None:
         super().__init__()
 
-        self.model: ganomalyModel = ganomalyModel(
+        self.generator: Generator = Generator(
             input_size=input_size,
-            n_features=n_features,
             latent_vec_size=latent_vec_size,
+            depth=depth,
             num_input_channels=num_input_channels,
+            n_features=n_features,
             extra_layers=extra_layers,
-            add_final_conv_layer=add_final_conv_layer
+            add_final_conv_layer=add_final_conv_layer,
         )
 
+        self.weights_init(self.generator)
+
         self.generator_loss = GeneratorLoss(wadv, wcon, wenc)
+
+        self.discriminator: Discriminator = Discriminator(
+            input_size=input_size,
+            num_input_channels=num_input_channels,
+            n_features=n_features,
+            extra_layers=extra_layers,
+        )
+        
+        self.weights_init(self.discriminator)
+
         self.discriminator_loss = DiscriminatorLoss()
 
         self.learning_rate = lr
@@ -80,6 +94,20 @@ class Ganomaly(pl.LightningModule):
         # important for training with multiple optimizers
         self.automatic_optimization = False
 
+    @staticmethod
+    def weights_init(module: torch.nn.Module) -> None:
+        """Initialize DCGAN weights.
+
+        Args:
+            module (nn.Module): [description]
+        """
+        classname = module.__class__.__name__
+        if classname.find("Conv") != -1:
+            torch.nn.init.normal_(module.weight.data, 0.0, 0.02)
+        elif classname.find("BatchNorm") != -1:
+            torch.nn.init.normal_(module.weight.data, 1.0, 0.02)
+            torch.nn.init.constant_(module.bias.data, 0)
+
     def configure_optimizers(self) -> list[optim.Optimizer]:
         """Configures optimizers for each decoder.
 
@@ -87,12 +115,12 @@ class Ganomaly(pl.LightningModule):
             Optimizer: Adam optimizer for each decoder
         """
         optimizer_d = optim.Adam(
-            self.model.discriminator.parameters(),
+            self.discriminator.parameters(),
             lr=self.learning_rate,
             betas=(self.beta1, self.beta2),
         )
         optimizer_g = optim.Adam(
-            self.model.generator.parameters(),
+            self.generator.parameters(),
             lr=self.learning_rate,
             betas=(self.beta1, self.beta2),
         )
@@ -113,43 +141,51 @@ class Ganomaly(pl.LightningModule):
         del batch_idx  # `batch_idx` variables is not used.
 
         disc_optimiser, gen_optimiser = self.optimizers()
+        
+        input = pad_nextpow2(batch["image"])
 
         ##########################
         # Optimize Discriminator #
         ##########################
-        output = self.model(batch["image"])
+        self.toggle_optimizer(disc_optimiser)
+        with torch.no_grad():
+            fake, latent_i, latent_o = self.generator(input)
 
-        pred_real, _ = self.model.discriminator(output["real"])
-        pred_fake, _ = self.model.discriminator(output["fake"])
+        pred_real, _ = self.discriminator(input)
+        pred_fake, _ = self.discriminator(fake)
 
         # loss
         disc_loss = self.discriminator_loss(pred_real, pred_fake)
         
         # Discriminator grad calculations
-        disc_optimiser.zero_grad()
         self.manual_backward(disc_loss)
         disc_optimiser.step()
+        disc_optimiser.zero_grad()
+        self.untoggle_optimizer(disc_optimiser)
 
         ######################
         # Optimize Generator #
         ######################
-        output = self.model(batch["image"])
+        self.toggle_optimizer(gen_optimiser)
+        fake, latent_i, latent_o = self.generator(input)
 
-        _, feature_real = self.model.discriminator(output["real"])
-        _, feature_fake = self.model.discriminator(output["fake"])
-        
+        with torch.no_grad():
+            _, feature_real = self.discriminator(input)
+            _, feature_fake = self.discriminator(fake)
+
         # loss
-        gen_loss = self.generator_loss(output["latent_i"], output["latent_o"], output["real"], output["fake"], feature_real, feature_fake)
+        gen_loss = self.generator_loss(latent_i, latent_o, input, fake, feature_real, feature_fake)
 
         # Generator grad calculations
-        gen_optimiser.zero_grad()
         self.manual_backward(gen_loss)
         gen_optimiser.step()
+        gen_optimiser.zero_grad()
+        self.untoggle_optimizer(gen_optimiser)
 
         #################
         # Anomaly Score #
         #################
-        score = torch.mean(torch.pow((output["latent_i"] - output["latent_o"]), 2), dim=1).view(-1)
+        score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
         batch_score, _ = torch.max(score, dim=0)
 
         # Log
@@ -169,30 +205,26 @@ class Ganomaly(pl.LightningModule):
             (STEP_OUTPUT): Output predictions.
         """
 
-        real = pad_nextpow2(batch["image"])
-        fake, latent_i, latent_o = self.model.generator(real)
-        foreground_mask = ((real+1)/2 != 0).float()
-        fake = fake * foreground_mask - (1-foreground_mask)
+        input = pad_nextpow2(batch["image"])
+
+        fake, latent_i, latent_o = self.generator(input)
 
         ######################
         # Discriminator Loss #
         ######################
-        pred_real, _ = self.model.discriminator(real)
-        pred_fake, _ = self.model.discriminator(fake.detach())
+        pred_real, _ = self.discriminator(input)
+        pred_fake, _ = self.discriminator(fake)
         disc_loss = self.discriminator_loss(pred_real, pred_fake)
         
         ##################
         # Generator Loss #
         ##################
-        pred_fake, _ = self.model.discriminator(fake)
-        gen_loss = self.generator_loss(latent_i, latent_o, real, fake, pred_real, pred_fake)
+        gen_loss = self.generator_loss(latent_i, latent_o, input, fake, pred_real, pred_fake)
 
         #################
         # Anomaly Score #
         #################
-        assert latent_i.size()[0] == real.size()[0], f"{latent_i.size()} {real.size()}"
         score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
-        assert score.size()[0] == score.size()[0], f"{score.size()} {real.size()}"
         batch_score, _ = torch.max(score, dim=0)
 
         # log
@@ -202,19 +234,21 @@ class Ganomaly(pl.LightningModule):
 
     def generate_and_save_samples(self, epoch):
         # Generate and save example images
-        self.model.eval()  # Set the model to evaluation mode to ensure deterministic results
+        self.generator.eval()  # Set the model to evaluation mode to ensure deterministic results
         with torch.no_grad():
             # Generate samples from your GAN
-            output = self.model(self.example_images)
+            input = pad_nextpow2(self.example_images)
+
+            output = self.generator(input)
 
             # Convert generated samples to a grid for visualization (using torchvision)
             num_samples = self.example_images.size(0)
-            grid = torchvision.utils.make_grid((output["fake"]+ 1) / 2, nrow=int(num_samples**0.5))
+            grid = torchvision.utils.make_grid((output+ 1) / 2, nrow=int(num_samples**0.5))
             filename = f"GANomaly_fake_epoch={epoch}.png"
             save_path = os.path.join(self.save_example_dir, filename)
             torchvision.utils.save_image(grid, save_path)
             
-        self.model.train()  # Set the model back to training mode 
+        self.generator.train()  # Set the model back to training mode 
     
     def on_validation_epoch_end(self):
 
