@@ -15,7 +15,10 @@ class CustomImageDataset(Dataset):
         filename = self.filenames[idx]
         image_path = os.path.join(self.data_dir, filename)
         image = Image.open(image_path)
-        
+
         if self.transform:
             image = self.transform(image)
+            mask = ((image+1)/2 != 0).all(dim=0).float()
+            image = image*mask - (1-mask)
+
         return {"filename": filename, "image": image}

@@ -15,4 +15,4 @@ class CIEDE2000Loss(Module):
 
         delE = deltaE_ciede2000(img1_lab.permute(0,2,3,1).cpu().detach().numpy(), img2_lab.permute(0,2,3,1).cpu().detach().numpy())
 
-        return delE/100
+        return delE

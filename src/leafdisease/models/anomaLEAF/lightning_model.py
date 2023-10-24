@@ -125,7 +125,8 @@ class anomaLEAF(pl.LightningModule):
         
         # model forward pass
         outputs = [self.model(x) for x in patched_inputs]
-        output = sum(map(lambda x, y: x * y * foreground_mask - (1-foreground_mask), outputs, inv_masks)) # recover all reconstructed patches
+        output = sum(map(lambda x, y: x * y, outputs, inv_masks)) # recover all reconstructed patches
+        output = output * foreground_mask - (1-foreground_mask)
 
         # loss
         l2_loss = self.l2_loss_func(input, output)
@@ -158,13 +159,15 @@ class anomaLEAF(pl.LightningModule):
         foreground_mask = ((input+1)/2 != 0).float()
 
         # generate masks
-        disjoint_masks = self.mask_gen(self.k_list[0])
+        k = random.sample(self.k_list, 1)
+        disjoint_masks = self.mask_gen(k[0])
         patched_inputs, inv_masks = self.input_gen(input, disjoint_masks)
         
         # model forward pass
         outputs = [self.model(x) for x in patched_inputs]
         output = sum(map(lambda x, y: x * y * foreground_mask - (1-foreground_mask), outputs, inv_masks)) # recover all reconstructed patches
-
+        output = output * foreground_mask - (1-foreground_mask)
+        
         # loss
         l2_loss = self.l2_loss_func(input, output)
         gms_loss = self.msgms_loss_func(input, output)
@@ -181,8 +184,9 @@ class anomaLEAF(pl.LightningModule):
         
             # model forward pass
             outputs = [self.model(x) for x in patched_inputs]
-            output = sum(map(lambda x, y: x * y * foreground_mask, outputs, inv_masks)) # recover all reconstructed patches
-        
+            output = sum(map(lambda x, y: x * y, outputs, inv_masks)) # recover all reconstructed patches
+            output = output * foreground_mask - (1-foreground_mask)
+            
             # score for this patch size
             anomaly_map += self.msgms_loss_func(input, output, as_loss=False)
         
@@ -216,22 +220,25 @@ class anomaLEAF(pl.LightningModule):
             foreground_mask = ((input+1)/2 != 0).float()
 
             # generate masks
-            disjoint_masks = self.mask_gen(self.k_list[0])
-            patched_inputs, inv_masks = self.input_gen(input, disjoint_masks)
-        
-            # model forward pass
-            outputs = [self.model(x) for x in patched_inputs]
-            output = sum(map(lambda x, y: x * y * foreground_mask - (1-foreground_mask), outputs, inv_masks))    # recover all reconstructed patches
+            for k in self.k_list:
+                # generate masks
+                disjoint_masks = self.mask_gen(k)
+                patched_inputs, inv_masks = self.input_gen(input, disjoint_masks)
+            
+                # model forward pass
+                outputs = [self.model(x) for x in patched_inputs]
+                output = sum(map(lambda x, y: x * y, outputs, inv_masks)) # recover all reconstructed patches
+                output = output * foreground_mask - (1-foreground_mask)
+            
+                # Convert the output to [0, 1] range for the entire batch
+                output = (output + 1) / 2
 
-            # Convert the output to [0, 1] range for the entire batch
-            output = (output + 1) / 2
+                num_samples = self.example_images.size(0)
 
-            num_samples = self.example_images.size(0)
-
-            grid = torchvision.utils.make_grid(output, nrow=int(num_samples**0.5))
-            filename = f"anomaLEAF_fake_epoch={epoch}.png"
-            save_path = os.path.join(self.save_example_dir, filename)
-            torchvision.utils.save_image(grid, save_path)
+                grid = torchvision.utils.make_grid(output, nrow=int(num_samples**0.5))
+                filename = f"anomaLEAF_fake_epoch={epoch}_patch={k}.png"
+                save_path = os.path.join(self.save_example_dir, filename)
+                torchvision.utils.save_image(grid, save_path)
             
     def on_validation_epoch_end(self):
 

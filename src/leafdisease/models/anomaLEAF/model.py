@@ -3,6 +3,7 @@ from typing import List
 from torch import nn, Tensor
 
 from leafdisease.criterions.msgms import MSGMSLoss
+from leafdisease.criterions.ciede2000 import CIEDE2000Loss
 from leafdisease.components.unet import UNet
 from leafdisease.utils.image import PatchMask, PatchedInputs, pad_nextpow2, mean_smoothing
 
@@ -56,6 +57,8 @@ class anomaleafModel(nn.Module):
         foreground_mask = ((input+1)/2 != 0).float()
 
         anomaly_map = 0
+        colour_map = 0
+        fake = {}
         # calculate anomaly score
         for k in self.k_list:
             # generate masks
@@ -68,19 +71,25 @@ class anomaleafModel(nn.Module):
             output = sum(map(lambda x, y: x * y, outputs, inv_masks)) # recover all reconstructed patches
             output = output * foreground_mask - (1-foreground_mask)
 
-            if k == self.reconstruction_k:
-                fake = output.clone()
+            fake[k] = output
         
-            # score for this patch size
+            # anomaly score for this patch size
             anomaly_map += self.msgms_loss_func(input, output, as_loss=False)
+
+            colour_map += CIEDE2000Loss(input, output)
         
         # smooth anomaly map
         anomaly_map = mean_smoothing(anomaly_map)
 
         # calculate the maximum heatmap score for each image in the batch
-        max_values, _ = torch.max(anomaly_map.view(anomaly_map.size(0), -1), dim=1)
+        anomaly_score, _ = torch.max(anomaly_map.view(anomaly_map.size(0), -1), dim=1)
 
-        return {"real": input, "fake": fake, "pred_heatmap": anomaly_map, "pred_score": max_values}
+        # smooth colour map
+        colour_map = mean_smoothing(colour_map)
+
+        colour_score, _ = torch.max(anomaly_map.view(anomaly_map.size(0), -1), dim=1)
+
+        return {"real": input, "fake": fake, "anomaly_map": anomaly_map, "anomaly_map": anomaly_score, "colour_map": colour_map, "color_score": colour_score}
 
 
 
