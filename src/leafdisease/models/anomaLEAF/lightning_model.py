@@ -17,6 +17,7 @@ import torchvision
 
 from leafdisease.components.unet import UNet
 from leafdisease.criterions.msgms import MSGMSLoss
+from leafdisease.criterions.colour import ColourLoss
 from leafdisease.criterions.ssim import SSIMLoss
 from leafdisease.utils.image import PatchMask, PatchedInputs, pad_nextpow2, mean_smoothing
 
@@ -65,11 +66,11 @@ class anomaLEAF(pl.LightningModule):
         self.input_gen = PatchedInputs(blackout=blackout)
 
         # Loss functions
-        # self.l1_loss_func = nn.L1Loss(reduction="mean")
         self.l2_loss_func = nn.MSELoss(reduction="mean")
         self.ssim_loss_func = SSIMLoss()
         self.msgms_loss_func = MSGMSLoss()
-
+        self.colour_loss_func = ColourLoss()
+        
         # Loss parameters
         self.epsilon = epsilon
         self.gamma = gamma
@@ -220,6 +221,8 @@ class anomaLEAF(pl.LightningModule):
             foreground_mask = ((input+1)/2 != 0).float()
 
             # generate masks
+            anomaly_map = 0
+            colour_map = 0
             for k in self.k_list:
                 # generate masks
                 disjoint_masks = self.mask_gen(k)
@@ -229,7 +232,11 @@ class anomaLEAF(pl.LightningModule):
                 outputs = [self.model(x) for x in patched_inputs]
                 output = sum(map(lambda x, y: x * y, outputs, inv_masks)) # recover all reconstructed patches
                 output = output * foreground_mask - (1-foreground_mask)
-            
+
+                # anomaly score for this patch size
+                anomaly_map += self.msgms_loss_func(input, output, as_loss=False)
+                colour_map += self.colour_loss_func(input, output)
+
                 # Convert the output to [0, 1] range for the entire batch
                 output = (output + 1) / 2
 
@@ -239,6 +246,19 @@ class anomaLEAF(pl.LightningModule):
                 filename = f"anomaLEAF_fake_epoch={epoch}_patch={k}.png"
                 save_path = os.path.join(self.save_example_dir, filename)
                 torchvision.utils.save_image(grid, save_path)
+        
+        # smooth anomaly map
+        anomaly_map = mean_smoothing(anomaly_map)
+        grid = torchvision.utils.make_grid(anomaly_map, nrow=int(num_samples**0.5))
+        filename = f"anomaLEAF_anomaly_map_epoch={epoch}.png"
+        save_path = os.path.join(self.save_example_dir, filename)
+        torchvision.utils.save_image(grid, save_path)
+
+        colour_map = mean_smoothing(colour_map)
+        grid = torchvision.utils.make_grid(colour_map, nrow=int(num_samples**0.5))
+        filename = f"anomaLEAF_colour_map_epoch={epoch}.png"
+        save_path = os.path.join(self.save_example_dir, filename)
+        torchvision.utils.save_image(grid, save_path)
             
     def on_validation_epoch_end(self):
 

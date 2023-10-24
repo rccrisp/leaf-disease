@@ -46,6 +46,7 @@ class anomaleafModel(nn.Module):
         self.reconstruction_k = k_values[reconstruct_k_idx]
 
         self.msgms_loss_func = MSGMSLoss()
+        self.colour_loss = CIEDE2000Loss()
 
     def forward(self, batch: Tensor):
 
@@ -76,7 +77,7 @@ class anomaleafModel(nn.Module):
             # anomaly score for this patch size
             anomaly_map += self.msgms_loss_func(input, output, as_loss=False)
 
-            colour_map += CIEDE2000Loss(input, output)
+            colour_map += self.colour_loss(input, output)
         
         # smooth anomaly map
         anomaly_map = mean_smoothing(anomaly_map)
