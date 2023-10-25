@@ -23,6 +23,6 @@ class CustomImageDataset(Dataset):
             noisy_mask = ((image+1)/2 != 0).all(dim=0).float()
             noisy_mask = noisy_mask.unsqueeze(0)
             mask = mean_smoothing(noisy_mask)
-            mask = mask > self.threshold
+            mask = (mask > self.threshold).float()
 
         return {"filename": filename, "image": image, "mask": mask}
