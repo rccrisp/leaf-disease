@@ -23,6 +23,9 @@ from leafdisease.utils.image import PatchMask, PatchedInputs, pad_nextpow2, mean
 
 logger = logging.getLogger(__name__)
 
+use_cuda = torch.cuda.is_available()
+device = torch.device('cuda' if use_cuda else 'cpu')
+
 class anomaLEAF(pl.LightningModule):
     """PL Lightning Module for the anomaLEAF Algorithm.
 
@@ -158,7 +161,7 @@ class anomaLEAF(pl.LightningModule):
         input = pad_nextpow2(batch["image"])
 
         foreground_mask = ((input+1)/2 != 0).float()
-
+            
         # generate masks
         k = random.sample(self.k_list, 1)
         disjoint_masks = self.mask_gen(k[0])

@@ -9,6 +9,6 @@ class ColourLoss(Module):
     def forward(self, img1: Tensor, img2: Tensor):
 
         colour_loss = torch.abs(img1-img2)
-        colour_loss = torch.sum(colour_loss, dim=1)
+        colour_loss = torch.sum(colour_loss, dim=1, keepdim=True)
 
         return colour_loss
