@@ -248,7 +248,7 @@ class anomaLEAF(pl.LightningModule):
                 # Convert the output to [0, 1] range for the entire batch
                 output = (output + 1) / 2
 
-                num_samples = self.example_images.size(0)
+                num_samples = self.example_batch.size(0)
 
                 grid = torchvision.utils.make_grid(output, nrow=int(num_samples**0.5))
                 filename = f"{epoch}-patch={k}.png"
@@ -271,7 +271,7 @@ class anomaLEAF(pl.LightningModule):
     def on_validation_epoch_end(self):
 
         # Specify when to generate and save examples (e.g., every n epochs)
-        if self.example_images is not None:
+        if self.example_batch is not None:
 
             if self.current_epoch % self.save_n_epochs == 0:
 
