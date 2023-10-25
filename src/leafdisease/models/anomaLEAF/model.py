@@ -48,14 +48,11 @@ class anomaleafModel(nn.Module):
     def forward(self, batch: Tensor):
 
          # pad image
-        image = pad_nextpow2(self.example_batch["image"])
+        image = pad_nextpow2(batch["image"])
 
-        foreground_mask = pad_nextpow2(self.example_batch["mask"])
+        foreground_mask = pad_nextpow2(batch["mask"])
         
         input = image*foreground_mask - (1-foreground_mask)
-
-        # remove background
-        foreground_mask = ((input+1)/2 != 0).float()
 
         anomaly_map = 0
         colour_map = 0
