@@ -1,11 +1,13 @@
 import os
 from PIL import Image
 from torch.utils.data import Dataset
+from leafdisease.utils.image import mean_smoothing
 
 class CustomImageDataset(Dataset):
-    def __init__(self, data_dir, transform=None):
+    def __init__(self, data_dir, threshold=0.5, transform=None):
         self.data_dir = data_dir
         self.transform = transform
+        self.threshold = threshold
         self.filenames = [filename for filename in os.listdir(data_dir)]
 
     def __len__(self):
@@ -18,7 +20,9 @@ class CustomImageDataset(Dataset):
 
         if self.transform:
             image = self.transform(image)
-            mask = ((image+1)/2 != 0).all(dim=0).float()
-            image = image*mask - (1-mask)
+            noisy_mask = ((image+1)/2 != 0).all(dim=0).float()
+            noisy_mask = noisy_mask.unsqueeze(0)
+            mask = mean_smoothing(noisy_mask)
+            mask = mask > self.threshold
 
-        return {"filename": filename, "image": image}
+        return {"filename": filename, "image": image, "mask": mask}

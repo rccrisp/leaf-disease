@@ -54,7 +54,7 @@ class anomaLEAF(pl.LightningModule):
         beta1: float = 0.5,
         beta2: float = 0.999,
         save_examples_every_n_epochs: int = 10,
-        example_images: Tensor = None,
+        example_batch: Tensor = None,
         save_example_dir: str = "examples"
     ) -> None:
         super().__init__()
@@ -86,7 +86,7 @@ class anomaLEAF(pl.LightningModule):
 
         # for visualising GAN training
         self.save_n_epochs = save_examples_every_n_epochs
-        self.example_images = example_images
+        self.example_batch = example_batch
         self.save_example_dir = save_example_dir
 
     def configure_optimizers(self) -> optim.Optimizer:
@@ -118,9 +118,11 @@ class anomaLEAF(pl.LightningModule):
         del batch_idx  # `batch_idx` variables is not used.
 
         # pad image
-        input = pad_nextpow2(batch["image"])
+        image = pad_nextpow2(batch["image"])
 
-        foreground_mask = ((input+1)/2 != 0).float()
+        foreground_mask = pad_nextpow2(batch["mask"])
+        
+        input = image*foreground_mask - (1-foreground_mask)
 
         # generate masks
         k = random.sample(self.k_list, 1)
@@ -130,7 +132,7 @@ class anomaLEAF(pl.LightningModule):
         # model forward pass
         outputs = [self.model(x) for x in patched_inputs]
         output = sum(map(lambda x, y: x * y, outputs, inv_masks)) # recover all reconstructed patches
-        output = output * foreground_mask - (1-foreground_mask)
+        # output = output * foreground_mask - (1-foreground_mask)
 
         # loss
         l2_loss = self.l2_loss_func(input, output)
@@ -158,9 +160,11 @@ class anomaLEAF(pl.LightningModule):
         """
 
         # pad image
-        input = pad_nextpow2(batch["image"])
+        image = pad_nextpow2(batch["image"])
 
-        foreground_mask = ((input+1)/2 != 0).float()
+        foreground_mask = pad_nextpow2(batch["mask"])
+        
+        input = image*foreground_mask - (1-foreground_mask)
             
         # generate masks
         k = random.sample(self.k_list, 1)
@@ -170,7 +174,7 @@ class anomaLEAF(pl.LightningModule):
         # model forward pass
         outputs = [self.model(x) for x in patched_inputs]
         output = sum(map(lambda x, y: x * y * foreground_mask - (1-foreground_mask), outputs, inv_masks)) # recover all reconstructed patches
-        output = output * foreground_mask - (1-foreground_mask)
+        # output = output * foreground_mask - (1-foreground_mask)
         
         # loss
         l2_loss = self.l2_loss_func(input, output)
@@ -189,7 +193,7 @@ class anomaLEAF(pl.LightningModule):
             # model forward pass
             outputs = [self.model(x) for x in patched_inputs]
             output = sum(map(lambda x, y: x * y, outputs, inv_masks)) # recover all reconstructed patches
-            output = output * foreground_mask - (1-foreground_mask)
+            # output = output * foreground_mask - (1-foreground_mask)
             
             # score for this patch size
             anomaly_map += self.msgms_loss_func(input, output, as_loss=False)
@@ -218,10 +222,11 @@ class anomaLEAF(pl.LightningModule):
         with torch.no_grad():
 
             # pad image
-            input = pad_nextpow2(self.example_images)
+            image = pad_nextpow2(self.example_batch["image"])
 
-            # remove background
-            foreground_mask = ((input+1)/2 != 0).float()
+            foreground_mask = pad_nextpow2(self.example_batch["mask"])
+            
+            input = image*foreground_mask - (1-foreground_mask)
 
             # generate masks
             anomaly_map = 0

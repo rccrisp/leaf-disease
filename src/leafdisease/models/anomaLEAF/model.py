@@ -7,9 +7,6 @@ from leafdisease.criterions.ciede2000 import CIEDE2000Loss
 from leafdisease.components.unet import UNet
 from leafdisease.utils.image import PatchMask, PatchedInputs, pad_nextpow2, mean_smoothing
 
-use_cuda = torch.cuda.is_available()
-device = torch.device('cuda' if use_cuda else 'cpu')
-
 class anomaleafModel(nn.Module):
     """AnomaLEAF Model
     
@@ -51,8 +48,11 @@ class anomaleafModel(nn.Module):
     def forward(self, batch: Tensor):
 
          # pad image
-        input = pad_nextpow2(batch["image"])
-        input = input.to(device)
+        image = pad_nextpow2(self.example_batch["image"])
+
+        foreground_mask = pad_nextpow2(self.example_batch["mask"])
+        
+        input = image*foreground_mask - (1-foreground_mask)
 
         # remove background
         foreground_mask = ((input+1)/2 != 0).float()
