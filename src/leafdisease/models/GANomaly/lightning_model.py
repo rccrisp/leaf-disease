@@ -244,7 +244,7 @@ class Ganomaly(pl.LightningModule):
             # Convert generated samples to a grid for visualization (using torchvision)
             num_samples = self.example_images.size(0)
             grid = torchvision.utils.make_grid((gen_image + 1) / 2, nrow=int(num_samples**0.5))
-            filename = f"GANomaly_fake_epoch={epoch}.png"
+            filename = f"{epoch}.png"
             save_path = os.path.join(self.save_example_dir, filename)
             torchvision.utils.save_image(grid, save_path)
             

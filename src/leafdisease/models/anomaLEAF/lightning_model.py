@@ -246,20 +246,20 @@ class anomaLEAF(pl.LightningModule):
                 num_samples = self.example_images.size(0)
 
                 grid = torchvision.utils.make_grid(output, nrow=int(num_samples**0.5))
-                filename = f"anomaLEAF_fake_epoch={epoch}_patch={k}.png"
+                filename = f"{epoch}-patch={k}.png"
                 save_path = os.path.join(self.save_example_dir, filename)
                 torchvision.utils.save_image(grid, save_path)
         
         # smooth anomaly map
         anomaly_map = mean_smoothing(anomaly_map)
         grid = torchvision.utils.make_grid(anomaly_map, nrow=int(num_samples**0.5))
-        filename = f"anomaLEAF_anomaly_map_epoch={epoch}.png"
+        filename = f"{epoch}-anomaly_map.png"
         save_path = os.path.join(self.save_example_dir, filename)
         torchvision.utils.save_image(grid, save_path)
 
         colour_map = mean_smoothing(colour_map)
         grid = torchvision.utils.make_grid(colour_map, nrow=int(num_samples**0.5))
-        filename = f"anomaLEAF_colour_map_epoch={epoch}.png"
+        filename = f"{epoch}-colour_map.png"
         save_path = os.path.join(self.save_example_dir, filename)
         torchvision.utils.save_image(grid, save_path)
             
