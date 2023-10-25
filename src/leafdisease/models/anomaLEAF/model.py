@@ -84,6 +84,7 @@ class anomaleafModel(nn.Module):
 
         # smooth colour map
         colour_map = mean_smoothing(colour_map)
+        colour_map /= len(self.k_list)
 
         colour_score, _ = torch.max(anomaly_map.view(anomaly_map.size(0), -1), dim=1)
 
