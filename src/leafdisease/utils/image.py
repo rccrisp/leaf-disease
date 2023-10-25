@@ -55,7 +55,7 @@ class PatchedInputs(nn.Module):
         else:
             grayscale = torch.mean(input.clone(), dim=1, keepdim=True).to(device)
             grayscale = grayscale.expand(-1, 3, -1, -1)
-            patched_inputs = [input * mask -  + grayscale * inv_mask for mask, inv_mask in zip(masks, inverse_masks)]
+            patched_inputs = [input * mask  + grayscale * inv_mask for mask, inv_mask in zip(masks, inverse_masks)]
 
         return patched_inputs, inverse_masks
         
