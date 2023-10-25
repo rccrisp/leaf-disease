@@ -61,7 +61,8 @@ class anomaleafModel(nn.Module):
         for k in self.k_list:
             # generate masks
             disjoint_masks = self.mask_gen(k)
-            patched_inputs, inv_masks = self.input_gen(input, disjoint_masks)
+            patched_inputs, inv_masks = self.input_gen((input+1)/2, disjoint_masks)
+            patched_inputs = (patched_inputs-1)/2
         
             # model forward pass
             with torch.no_grad():
