@@ -253,9 +253,11 @@ class Ganomaly(pl.LightningModule):
 
             gen_image, _, _ = self.generator(input)
             
+            output = (gen_image + 1) / 2
+
             # Convert generated samples to a grid for visualization (using torchvision)
-            num_samples = self.example_images.size(0)
-            grid = torchvision.utils.make_grid((gen_image + 1) / 2, nrow=int(num_samples**0.5))
+            num_samples = self.example_batch["image"].size(0)
+            grid = torchvision.utils.make_grid(output, nrow=int(num_samples**0.5))
             filename = f"{epoch}.png"
             save_path = os.path.join(self.save_example_dir, filename)
             torchvision.utils.save_image(grid, save_path)
@@ -265,7 +267,7 @@ class Ganomaly(pl.LightningModule):
     def on_validation_epoch_end(self):
 
         # Specify when to generate and save examples (e.g., every n epochs)
-        if self.example_images is not None:
+        if self.example_batch is not None:
 
             if self.current_epoch % self.save_n_epochs == 0:
 
