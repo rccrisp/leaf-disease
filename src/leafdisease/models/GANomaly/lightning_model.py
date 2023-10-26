@@ -142,7 +142,11 @@ class Ganomaly(pl.LightningModule):
 
         disc_optimiser, gen_optimiser = self.optimizers()
         
-        input = pad_nextpow2(batch["image"])
+        image = pad_nextpow2(batch["image"])
+
+        foreground_mask = pad_nextpow2(batch["mask"])
+            
+        input = image*foreground_mask - (1-foreground_mask)
 
         ##########################
         # Optimize Discriminator #
@@ -205,8 +209,12 @@ class Ganomaly(pl.LightningModule):
             (STEP_OUTPUT): Output predictions.
         """
 
-        input = pad_nextpow2(batch["image"])
+        image = pad_nextpow2(batch["image"])
 
+        foreground_mask = pad_nextpow2(batch["mask"])
+            
+        input = image*foreground_mask - (1-foreground_mask)
+        
         fake, latent_i, latent_o = self.generator(input)
 
         ######################
@@ -237,7 +245,11 @@ class Ganomaly(pl.LightningModule):
         self.generator.eval()  # Set the model to evaluation mode to ensure deterministic results
         with torch.no_grad():
             # Generate samples from your GAN
-            input = pad_nextpow2(self.example_images)
+            image = pad_nextpow2(self.example_batch["image"])
+
+            foreground_mask = pad_nextpow2(self.example_batch["mask"])
+            
+            input = image*foreground_mask - (1-foreground_mask)
 
             gen_image, _, _ = self.generator(input)
             

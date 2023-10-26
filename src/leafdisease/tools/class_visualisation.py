@@ -23,7 +23,7 @@ def create_image_grid(image_data, n_images_per_dir=3, scale=3):
     plt.tight_layout()
     plt.show()
 
-def plot_class_distribution(class_counts):
+def plot_class_distribution(class_counts, size=20):
 
     # Extract class names and counts from the dictionary
     class_names = list(class_counts.keys())
@@ -37,7 +37,7 @@ def plot_class_distribution(class_counts):
 
     plt.figure(figsize=(8, 8))
     plt.rcParams["font.family"] = "serif"
-    plt.pie(class_values, labels=class_names, autopct=my_fmt, startangle=140)
+    plt.pie(class_values, labels=class_names, autopct=my_fmt, startangle=140, textprops={'fontsize': size})
     plt.axis('equal')  # Equal aspect ratio ensures that the pie is drawn as a circle.
 
     plt.title('')

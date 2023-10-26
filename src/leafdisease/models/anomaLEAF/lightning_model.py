@@ -173,7 +173,7 @@ class anomaLEAF(pl.LightningModule):
         
         # model forward pass
         outputs = [self.model((x-0.5)*2) for x in patched_inputs]
-        output = sum(map(lambda x, y: x * y * foreground_mask - (1-foreground_mask), outputs, inv_masks)) # recover all reconstructed patches
+        output = sum(map(lambda x, y: x * y, outputs, inv_masks)) # recover all reconstructed patches
         # output = output * foreground_mask - (1-foreground_mask)
         
         # loss
@@ -239,7 +239,7 @@ class anomaLEAF(pl.LightningModule):
                 # model forward pass
                 outputs = [self.model((x-0.5)*2) for x in patched_inputs]
                 output = sum(map(lambda x, y: x * y, outputs, inv_masks)) # recover all reconstructed patches
-                output = output * foreground_mask - (1-foreground_mask)
+                # output = output * foreground_mask - (1-foreground_mask)
 
                 # anomaly score for this patch size
                 anomaly_map += self.msgms_loss_func(input, output, as_loss=False)
