@@ -52,7 +52,7 @@ class Ganomaly(pl.LightningModule):
         beta1: float = 0.5,
         beta2: float = 0.999,
         save_examples_every_n_epochs: int = 10,
-        example_images: Tensor = None,
+        example_batch: Tensor = None,
         save_example_dir: str = "examples"
     ) -> None:
         super().__init__()
@@ -88,7 +88,7 @@ class Ganomaly(pl.LightningModule):
 
         # for visualising GAN training
         self.save_n_epochs = save_examples_every_n_epochs
-        self.example_images = example_images
+        self.example_batch = example_batch
         self.save_example_dir = save_example_dir
 
         # important for training with multiple optimizers
