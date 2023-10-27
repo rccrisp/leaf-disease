@@ -80,9 +80,9 @@ class anomaleafModel(nn.Module):
         colour_map = mean_smoothing(colour_map)
         colour_map /= len(self.k_list)
 
-        colour_score, _ = torch.max(anomaly_map.view(anomaly_map.size(0), -1), dim=1)
+        colour_score, _ = torch.max(colour_map.view(colour_map.size(0), -1), dim=1)
 
-        return {"real": input, "fake": fake, "anomaly_map": anomaly_map, "anomaly_score": anomaly_score, "colour_map": colour_map, "color_score": colour_score}
+        return {"real": input, "fake": fake, "anomaly_map": anomaly_map, "anomaly_score": anomaly_score, "colour_map": colour_map, "colour_score": colour_score}
 
 
 
