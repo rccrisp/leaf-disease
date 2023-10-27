@@ -14,6 +14,7 @@ import torch
 from torch import Tensor, nn
 
 from leafdisease.utils.image import pad_nextpow2
+from leafdisease.components.GAN import Generator
 
 class ganomalyModel(nn.Module):
     """GANomaly Model
@@ -31,32 +32,31 @@ class ganomalyModel(nn.Module):
         input_size: tuple[int, int],
         n_features: int,
         latent_vec_size: int,
+        depth: int,
         num_input_channels=3,
         extra_layers: bool = False,
         add_final_conv_layer: bool = True,
-        threshold: float = float('-inf')
         )-> None:
         super().__init__()
 
-        
-
-
-        self.threshold = threshold
-
- 
+        self.model: Generator = Generator(
+            input_size=input_size,
+            latent_vec_size=latent_vec_size,
+            depth=depth,
+            num_input_channels=num_input_channels,
+            n_features=n_features,
+            extra_layers=extra_layers,
+            add_final_conv_layer=add_final_conv_layer,
+        )
 
     def forward(self, batch):
         input = pad_nextpow2(batch)
 
         foreground_mask = ((input+1)/2 != 0).float()
 
-        fake, latent_i, latent_o = self.generator(input)
+        with torch.no_grad():
+            fake, latent_i, latent_o = self.model(input)
 
-        if self.training:
-            fake = fake * foreground_mask - (1-foreground_mask)
-            return {"real": input, "fake": fake, "latent_i": latent_i, "latent_o": latent_o}
-        else:
-            fake = fake * foreground_mask - (1-foreground_mask)
-            score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
-            label = self.threshold < score
-            return {"real": input, "fake": fake, "pred_score": score, "pred_label": label}
+        score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
+
+        return {"real": input, "fake": fake, "anomaly_score": score}
