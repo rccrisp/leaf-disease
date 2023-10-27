@@ -16,29 +16,53 @@ def plot_histogram(data, threshold=None, bins=10, x_label='Values', y_label='Fre
     plt.ylabel(y_label)
     plt.show()
 
-def plot_overlap_histograms(array1, array2, labels, alpha=0.5, bins=20):
+def plot_overlap_histograms(arrays, labels, column, alpha=0.5, bins=20, xlabel="Score"):
     # Calculate histograms for both arrays
-    hist1, bin_edges = np.histogram(array1, bins=bins, density=True)
-    hist2, _ = np.histogram(array2, bins=bin_edges, density=True)
+    _, bin_edges = np.histogram(arrays[0][column], bins=bins, density=True)
 
     # Calculate the bin width
     bin_width = bin_edges[1] - bin_edges[0]
-
-    # Normalize histograms to represent ratios (relative frequencies)
-    hist1 /= np.sum(hist1 * bin_width)
-    hist2 /= np.sum(hist2 * bin_width)
-
-    # Plot the histograms
+    
     plt.figure(figsize=(8, 6))
     plt.rcParams["font.family"] = "serif"
-    plt.bar(bin_edges[:-1], hist1, width=bin_width, alpha=alpha, label=labels[0])
-    plt.bar(bin_edges[:-1], hist2, width=bin_width, alpha=alpha, label=labels[1])
+    
+    for array, label in zip(arrays, labels):
+        hist, _ = np.histogram(array[column], bins=bin_edges, density=True)
 
-    plt.xlabel('Score')
+        # Normalize histograms to represent ratios (relative frequencies)
+        # hist /= np.sum(hist * bin_width)
+
+        # Plot the histograms
+        plt.bar(bin_edges[:-1], hist, width=bin_width, alpha=alpha, label=label)
+
+    plt.xlabel(xlabel)
     plt.ylabel('Relative Frequency')
     plt.legend()
     plt.show()
 
+def plot_boxplot(arrays, labels, column, ylabel):
+    plt.figure(figsize=(8, 6))
+    plt.rcParams["font.family"] = "serif"
+
+    # Initialize a list to store the positions of the boxplots
+    positions = []
+
+    for score, label in zip(arrays, labels):
+        # Generate positions for each boxplot
+        position = len(positions) + 0.2
+        positions.append(position)
+        
+        # Plot the boxplot at the calculated position
+        plt.boxplot(score[column], positions=[position], labels=[label], patch_artist=True, showfliers=False, widths=0.4)
+
+    # Set the x-axis labels
+    plt.xticks(positions, labels)
+
+    # Add labels and legend if needed
+    plt.ylabel(ylabel)
+
+    plt.show()
+    
 def plot_roc_curve(models):
     
     plt.figure(figsize=(8, 6))

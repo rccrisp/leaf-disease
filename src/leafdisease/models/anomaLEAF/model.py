@@ -3,7 +3,7 @@ from typing import List
 from torch import nn, Tensor
 
 from leafdisease.criterions.msgms import MSGMSLoss
-from leafdisease.criterions.ciede2000 import CIEDE2000Loss
+from leafdisease.criterions.colour import ColourLoss
 from leafdisease.components.unet import UNet
 from leafdisease.utils.image import PatchMask, PatchedInputs, pad_nextpow2, mean_smoothing
 
@@ -23,12 +23,9 @@ class anomaleafModel(nn.Module):
         num_input_channels=3,
         num_disjoint_sets=3,
         k_values: List[int] = [2,4,8,16],
-        reconstruct_k_idx: int = 0,
         blackout: bool = False,
     )-> None:
         super().__init__()
-
-        assert reconstruct_k_idx < len(k_values)
 
         self.model = UNet(
             n_channels=num_input_channels
@@ -39,11 +36,8 @@ class anomaleafModel(nn.Module):
         self.mask_gen = PatchMask(num_disjoint_sets, img_size = input_size, num_channels=3)
         self.input_gen = PatchedInputs(blackout=blackout)
 
-        # for reconstruction
-        self.reconstruction_k = k_values[reconstruct_k_idx]
-
         self.msgms_loss_func = MSGMSLoss()
-        self.colour_loss = CIEDE2000Loss()
+        self.colour_loss_func = ColourLoss()
 
     def forward(self, batch: Tensor):
 
@@ -74,7 +68,7 @@ class anomaleafModel(nn.Module):
             # anomaly score for this patch size
             anomaly_map += self.msgms_loss_func(input, output, as_loss=False)
 
-            colour_map += self.colour_loss(input, output)
+            colour_map += self.colour_loss_func(input, output)
         
         # smooth anomaly map
         anomaly_map = mean_smoothing(anomaly_map)
@@ -88,7 +82,7 @@ class anomaleafModel(nn.Module):
 
         colour_score, _ = torch.max(anomaly_map.view(anomaly_map.size(0), -1), dim=1)
 
-        return {"real": input, "fake": fake, "anomaly_map": anomaly_map, "anomaly_map": anomaly_score, "colour_map": colour_map, "color_score": colour_score}
+        return {"real": input, "fake": fake, "anomaly_map": anomaly_map, "anomaly_score": anomaly_score, "colour_map": colour_map, "color_score": colour_score}
 
 
 

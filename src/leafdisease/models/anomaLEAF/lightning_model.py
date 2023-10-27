@@ -49,7 +49,6 @@ class anomaLEAF(pl.LightningModule):
         gamma: int = 1,
         alpha: int = 1,
         tau: int = 1,
-        epsilon: int = 1,
         lr: float = 0.0001,
         beta1: float = 0.5,
         beta2: float = 0.999,
@@ -75,7 +74,6 @@ class anomaLEAF(pl.LightningModule):
         self.colour_loss_func = ColourLoss()
         
         # Loss parameters
-        self.epsilon = epsilon
         self.gamma = gamma
         self.alpha = alpha
         self.tau = tau
@@ -132,7 +130,7 @@ class anomaLEAF(pl.LightningModule):
         # model forward pass
         outputs = [self.model((x-0.5)*2) for x in patched_inputs]
         output = sum(map(lambda x, y: x * y, outputs, inv_masks)) # recover all reconstructed patches
-        # output = output * foreground_mask - (1-foreground_mask)
+        output = output * foreground_mask - (1-foreground_mask)
 
         # loss
         l2_loss = self.l2_loss_func(input, output)
@@ -174,7 +172,7 @@ class anomaLEAF(pl.LightningModule):
         # model forward pass
         outputs = [self.model((x-0.5)*2) for x in patched_inputs]
         output = sum(map(lambda x, y: x * y, outputs, inv_masks)) # recover all reconstructed patches
-        # output = output * foreground_mask - (1-foreground_mask)
+        output = output * foreground_mask - (1-foreground_mask)
         
         # loss
         l2_loss = self.l2_loss_func(input, output)
@@ -193,7 +191,7 @@ class anomaLEAF(pl.LightningModule):
             # model forward pass
             outputs = [self.model((x-0.5)*2) for x in patched_inputs]
             output = sum(map(lambda x, y: x * y, outputs, inv_masks)) # recover all reconstructed patches
-            # output = output * foreground_mask - (1-foreground_mask)
+            output = output * foreground_mask - (1-foreground_mask)
             
             # score for this patch size
             anomaly_map += self.msgms_loss_func(input, output, as_loss=False)
@@ -239,7 +237,7 @@ class anomaLEAF(pl.LightningModule):
                 # model forward pass
                 outputs = [self.model((x-0.5)*2) for x in patched_inputs]
                 output = sum(map(lambda x, y: x * y, outputs, inv_masks)) # recover all reconstructed patches
-                # output = output * foreground_mask - (1-foreground_mask)
+                output = output * foreground_mask - (1-foreground_mask)
 
                 # anomaly score for this patch size
                 anomaly_map += self.msgms_loss_func(input, output, as_loss=False)
