@@ -52,7 +52,7 @@ class ganomalyModel(nn.Module):
     def forward(self, batch):
         input = pad_nextpow2(batch)
 
-        foreground_mask = ((input+1)/2 != 0).float()
+        # foreground_mask = ((input+1)/2 != 0).float()
 
         with torch.no_grad():
             fake, latent_i, latent_o = self.model(input)

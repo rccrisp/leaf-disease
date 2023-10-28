@@ -27,7 +27,8 @@ class DiscriminatorLoss(nn.Module):
             pred_fake, torch.zeros(size=pred_fake.shape, dtype=torch.float32, device=pred_fake.device)
         )
         loss_discriminator = (error_discriminator_fake + error_discriminator_real) * 0.5
-        return loss_discriminator
+        
+        return error_discriminator_fake, error_discriminator_real, loss_discriminator
 
 class GeneratorLoss(nn.Module):
     """Generator loss for the pix2pix model.
@@ -63,4 +64,4 @@ class GeneratorLoss(nn.Module):
 
         loss = error_adv*self.wadv + error_con*self.wcon
         
-        return loss
+        return error_adv, error_con, loss
