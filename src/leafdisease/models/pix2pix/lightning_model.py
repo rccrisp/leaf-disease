@@ -213,6 +213,8 @@ class pix2pix(pl.LightningModule):
 
             output = self.generator(input)
 
+            output = (output + 1) / 2
+
             # Convert generated samples to a grid for visualization (using torchvision)
             num_samples = target.size(0)
 
