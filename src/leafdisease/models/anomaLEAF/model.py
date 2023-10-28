@@ -5,7 +5,7 @@ from torch import nn, Tensor
 from leafdisease.criterions.msgms import MSGMSLoss
 from leafdisease.criterions.colour import ColourLoss
 from leafdisease.components.unet import UNet
-from leafdisease.utils.image import PatchMask, PatchedInputs, pad_nextpow2, mean_smoothing
+from leafdisease.utils.image import PatchMask, PatchedInputs, pad_nextpow2, mean_smoothing, normalise, denormalise
 
 class anomaleafModel(nn.Module):
     """AnomaLEAF Model
@@ -46,7 +46,7 @@ class anomaleafModel(nn.Module):
 
         foreground_mask = pad_nextpow2(batch["mask"])
         
-        input = image*foreground_mask - (1-foreground_mask)
+        target = image*foreground_mask - (1-foreground_mask)
 
         anomaly_map = 0
         colour_map = 0
@@ -55,20 +55,20 @@ class anomaleafModel(nn.Module):
         for k in self.k_list:
             # generate masks
             disjoint_masks = self.mask_gen(k)
-            patched_inputs, inv_masks = self.input_gen((input+1)/2, disjoint_masks)
+            patched_inputs, inv_masks = self.input_gen(target, disjoint_masks)
         
             # model forward pass
             with torch.no_grad():
-                outputs = [self.model((x-1)/2) for x in patched_inputs]
+                outputs = [self.model(x) for x in patched_inputs]
             output = sum(map(lambda x, y: x * y, outputs, inv_masks)) # recover all reconstructed patches
             output = output * foreground_mask - (1-foreground_mask)
 
-            fake[k] = output
+            fake[k] = denormalise(output)
         
             # anomaly score for this patch size
-            anomaly_map += self.msgms_loss_func(input, output, as_loss=False)
+            anomaly_map += self.msgms_loss_func(target, output, as_loss=False)
 
-            colour_map += self.colour_loss_func(input, output)
+            colour_map += self.colour_loss_func(target, output)
         
         # smooth anomaly map
         anomaly_map = mean_smoothing(anomaly_map)
@@ -82,7 +82,9 @@ class anomaleafModel(nn.Module):
 
         colour_score, _ = torch.max(colour_map.view(colour_map.size(0), -1), dim=1)
 
-        return {"real": input, "fake": fake, "anomaly_map": anomaly_map, "anomaly_score": anomaly_score, "colour_map": colour_map, "colour_score": colour_score}
+        target = denormalise(target)
+
+        return {"real": target, "fake": fake, "anomaly_map": anomaly_map, "anomaly_score": anomaly_score, "colour_map": colour_map, "colour_score": colour_score}
 
 
 

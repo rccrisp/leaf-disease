@@ -13,7 +13,7 @@ import math
 import torch
 from torch import Tensor, nn
 
-from leafdisease.utils.image import pad_nextpow2
+from leafdisease.utils.image import pad_nextpow2, denormalise
 from leafdisease.components.GAN import Generator
 
 class ganomalyModel(nn.Module):
@@ -52,11 +52,12 @@ class ganomalyModel(nn.Module):
     def forward(self, batch):
         input = pad_nextpow2(batch)
 
-        # foreground_mask = ((input+1)/2 != 0).float()
-
         with torch.no_grad():
-            fake, latent_i, latent_o = self.model(input)
+            output, latent_i, latent_o = self.model(input)
 
         score = torch.mean(torch.pow((latent_i - latent_o), 2), dim=1).view(-1)
 
-        return {"real": input, "fake": fake, "anomaly_score": score}
+        input = denormalise(input)
+        output = denormalise(output)
+
+        return {"real": input, "fake": output, "anomaly_score": score}

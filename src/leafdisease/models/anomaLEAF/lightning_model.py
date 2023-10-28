@@ -19,7 +19,7 @@ from leafdisease.components.unet import UNet
 from leafdisease.criterions.msgms import MSGMSLoss
 from leafdisease.criterions.colour import ColourLoss
 from leafdisease.criterions.ssim import SSIMLoss
-from leafdisease.utils.image import PatchMask, PatchedInputs, pad_nextpow2, mean_smoothing
+from leafdisease.utils.image import PatchMask, PatchedInputs, pad_nextpow2, mean_smoothing, normalise, denormalise
 
 logger = logging.getLogger(__name__)
 
@@ -216,7 +216,6 @@ class anomaLEAF(pl.LightningModule):
 
     def generate_and_save_samples(self, epoch):
         # Generate and save example images
-
         with torch.no_grad():
 
             # pad image
@@ -244,7 +243,7 @@ class anomaLEAF(pl.LightningModule):
                 colour_map += self.colour_loss_func(input, output)
 
                 # Convert the output to [0, 1] range for the entire batch
-                output = (output + 1) / 2
+                output = denormalise(output)
 
                 num_samples = self.example_batch["image"].size(0)
 

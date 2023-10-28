@@ -13,7 +13,7 @@ import pytorch_lightning as pl
 from torch import Tensor, optim
 import torchvision
 
-from leafdisease.utils.image import pad_nextpow2
+from leafdisease.utils.image import pad_nextpow2, denormalise
 from .loss import GeneratorLoss, DiscriminatorLoss
 from leafdisease.components.pix2pix import Generator, Discriminator
 
@@ -130,9 +130,9 @@ class pix2pix(pl.LightningModule):
         disc_loss_fake, disc_loss_real, disc_loss = self.discriminator_loss(pred_real, pred_fake)
 
         # Discriminator grad calculations
+        disc_optimiser.zero_grad()
         self.manual_backward(disc_loss)
         disc_optimiser.step()
-        disc_optimiser.zero_grad()
         self.untoggle_optimizer(disc_optimiser)
 
         ######################
@@ -148,9 +148,9 @@ class pix2pix(pl.LightningModule):
         gen_adv_loss, gen_con_loss, gen_loss = self.generator_loss(patch_map=pred_fake, real=target, fake=output)
 
         # Generator grad calculations
+        gen_optimiser.zero_grad()
         self.manual_backward(gen_loss)
         gen_optimiser.step()
-        gen_optimiser.zero_grad()
         self.untoggle_optimizer(gen_optimiser)
 
         # Log
@@ -205,7 +205,6 @@ class pix2pix(pl.LightningModule):
 
     def generate_and_save_samples(self, epoch):
         # Generate and save example images
-        self.generator.eval()  # Set the model to evaluation mode to ensure deterministic results
         with torch.no_grad():
             target = pad_nextpow2(self.example_batch["image"])
         
@@ -213,7 +212,7 @@ class pix2pix(pl.LightningModule):
 
             output = self.generator(input)
 
-            output = (output + 1) / 2
+            output = denormalise(output)
 
             # Convert generated samples to a grid for visualization (using torchvision)
             num_samples = target.size(0)
@@ -222,8 +221,6 @@ class pix2pix(pl.LightningModule):
             filename = f"{epoch}-epoch.png"
             save_path = os.path.join(self.save_example_dir, filename)
             torchvision.utils.save_image(grid, save_path)
-            
-        self.generator.train()  # Set the model back to training mode 
     
     def on_validation_epoch_end(self):
 

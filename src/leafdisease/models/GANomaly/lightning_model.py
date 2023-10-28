@@ -162,9 +162,9 @@ class Ganomaly(pl.LightningModule):
         disc_loss = self.discriminator_loss(pred_real, pred_fake)
         
         # Discriminator grad calculations
+        disc_optimiser.zero_grad()
         self.manual_backward(disc_loss)
         disc_optimiser.step()
-        disc_optimiser.zero_grad()
         self.untoggle_optimizer(disc_optimiser)
 
         ######################
@@ -181,9 +181,9 @@ class Ganomaly(pl.LightningModule):
         gen_loss = self.generator_loss(latent_i, latent_o, input, fake, feature_real, feature_fake)
 
         # Generator grad calculations
+        gen_optimiser.zero_grad()
         self.manual_backward(gen_loss)
         gen_optimiser.step()
-        gen_optimiser.zero_grad()
         self.untoggle_optimizer(gen_optimiser)
 
         #################
@@ -242,7 +242,6 @@ class Ganomaly(pl.LightningModule):
 
     def generate_and_save_samples(self, epoch):
         # Generate and save example images
-        self.generator.eval()  # Set the model to evaluation mode to ensure deterministic results
         with torch.no_grad():
             # Generate samples from your GAN
             image = pad_nextpow2(self.example_batch["image"])
@@ -261,8 +260,6 @@ class Ganomaly(pl.LightningModule):
             filename = f"{epoch}-epoch.png"
             save_path = os.path.join(self.save_example_dir, filename)
             torchvision.utils.save_image(grid, save_path)
-            
-        self.generator.train()  # Set the model back to training mode 
     
     def on_validation_epoch_end(self):
 

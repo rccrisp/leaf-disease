@@ -8,6 +8,12 @@ from typing import Tuple, List
 use_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if use_cuda else 'cpu')
 
+def normalise(tensor: Tensor):
+    return tensor*2-1
+
+def denormalise(tensor: Tensor):
+    return (tensor+1)/2
+
 class PatchMask(nn.Module):
 
     def __init__(self,
