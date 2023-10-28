@@ -48,14 +48,16 @@ class PatchedInputs(nn.Module):
 
         self.blackout = blackout
 
-    def forward(self, input: Tensor, masks: List[Tensor]):
+    def forward(self, input: Tensor, masks: List[Tensor], mask_shift=2.01):
+        # to distinguish between normal pixels, and pixels the model must regenerate
+        # we shift the masked pixels outside of the range of the normal pixels
         inverse_masks = [1-mask for mask in masks]
         if self.blackout:
-            patched_inputs = [input * mask for mask in masks]
+            patched_inputs = [input * mask + mask_shift * inv_mask for mask, inv_mask in zip(masks, inverse_masks)]
         else:
             grayscale = torch.mean(input.clone(), dim=1, keepdim=True).to(device)
-            grayscale = grayscale.expand(-1, 3, -1, -1)
-            patched_inputs = [input * mask  + grayscale * inv_mask for mask, inv_mask in zip(masks, inverse_masks)]
+            grayscale = grayscale.expand(-1, 3, -1, -1) 
+            patched_inputs = [input * mask  + (grayscale + mask_shift)  * inv_mask for mask, inv_mask in zip(masks, inverse_masks)]
 
         return patched_inputs, inverse_masks
         
