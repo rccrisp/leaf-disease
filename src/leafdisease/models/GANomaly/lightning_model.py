@@ -159,7 +159,7 @@ class Ganomaly(pl.LightningModule):
         pred_fake, _ = self.discriminator(fake)
 
         # loss
-        disc_loss = self.discriminator_loss(pred_real, pred_fake)
+        disc_loss_fake, disc_loss_real, disc_loss = self.discriminator_loss(pred_real, pred_fake)
         
         # Discriminator grad calculations
         disc_optimiser.zero_grad()
@@ -178,7 +178,7 @@ class Ganomaly(pl.LightningModule):
             _, feature_fake = self.discriminator(fake)
 
         # loss
-        gen_loss = self.generator_loss(latent_i, latent_o, input, fake, feature_real, feature_fake)
+        gen_loss_enc, gen_loss_con, gen_loss_adv, gen_loss = self.generator_loss(latent_i, latent_o, input, fake, feature_real, feature_fake)
 
         # Generator grad calculations
         gen_optimiser.zero_grad()
@@ -194,7 +194,14 @@ class Ganomaly(pl.LightningModule):
 
         # Log
         self.log("train_disc_loss", disc_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("train_disc_loss_real", disc_loss_fake.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("train_disc_loss_fake", disc_loss_real.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+
         self.log("train_gen_loss", gen_loss.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("train_gen_loss_adv", gen_loss_adv.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("train_gen_loss_con", gen_loss_con.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+        self.log("train_gen_loss_enc", gen_loss_enc.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
+
         self.log("train_score", batch_score.item(), on_step=False, on_epoch=True, prog_bar=True, logger=self.logger)
 
         return {"gen_loss": gen_loss, "disc_loss": disc_loss}

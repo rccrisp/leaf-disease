@@ -48,12 +48,12 @@ class GeneratorLoss(nn.Module):
         Returns:
             Tensor: The computed generator loss.
         """
-        error_enc = self.loss_enc(latent_i, latent_o)
-        error_con = self.loss_con(images, fake)
-        error_adv = self.loss_adv(pred_real, pred_fake)
+        loss_enc = self.loss_enc(latent_i, latent_o)
+        loss_con = self.loss_con(images, fake)
+        loss_adv = self.loss_adv(pred_real, pred_fake)
 
-        loss = error_adv * self.wadv + error_con * self.wcon + error_enc * self.wenc
-        return loss
+        loss_generator = loss_adv * self.wadv + loss_con * self.wcon + loss_enc * self.wenc
+        return loss_enc, loss_con, loss_adv, loss_generator
 
 
 class DiscriminatorLoss(nn.Module):
@@ -74,11 +74,11 @@ class DiscriminatorLoss(nn.Module):
         Returns:
             Tensor: The computed discriminator loss.
         """
-        error_discriminator_real = self.loss_bce(
+        loss_real = self.loss_bce(
             pred_real, torch.ones(size=pred_real.shape, dtype=torch.float32, device=pred_real.device)
         )
-        error_discriminator_fake = self.loss_bce(
+        loss_fake = self.loss_bce(
             pred_fake, torch.zeros(size=pred_fake.shape, dtype=torch.float32, device=pred_fake.device)
         )
-        loss_discriminator = (error_discriminator_fake + error_discriminator_real) * 0.5
-        return loss_discriminator
+        loss_discriminator = (loss_fake + loss_real) * 0.5
+        return loss_fake, loss_real, loss_discriminator
